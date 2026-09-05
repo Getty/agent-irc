@@ -107,6 +107,35 @@ class SubagentTests(unittest.TestCase):
             self.assertEqual(s.turn_tools, 0, level)
             self.assertEqual(s.subagents["a293f253"]["tools"], 1, level)
 
+    def test_stop_takes_the_larger_tool_count(self):
+        s = self.session()
+        s.handle({"event": "SubagentStart", "session_id": SID, "agent_id": "a293f253", "agent_type": "Explore"})
+        for tid in ("t1", "t2", "t3"):
+            s.handle({"event": "PostToolUse", "session_id": SID, "agent_id": "a293f253", "tool_name": "Read",
+                      "tool_use_id": tid, "tool_input": {"file_path": "x"}})
+        # transcript exists but lags behind: it has usage and only one tool_use block
+        self.write_subagent("a293f253", [
+            {"type": "assistant", "requestId": "r1", "timestamp": "2026-09-05T03:31:09.000Z",
+             "message": {"model": "claude-sonnet-5", "usage": {"input_tokens": 100, "output_tokens": 10},
+                         "content": [{"type": "tool_use"}]}}])
+        self.clock.tick(5)
+        lines = s.handle({"event": "SubagentStop", "session_id": SID, "agent_id": "a293f253", "agent_type": "Explore",
+                          "transcript_path": self.transcript})
+        self.assertEqual(lines, ["⇠ subagent Explore done · 5.0s · 3 tools · 100 in / 10 out · claude-sonnet-5"])
+        self.assertEqual(s.total_tools, 3)
+
+    def test_stop_prefers_transcript_when_events_are_missing(self):
+        s = self.session()
+        s.handle({"event": "SubagentStart", "session_id": SID, "agent_id": "b1", "agent_type": "worker"})
+        self.write_subagent("b1", [
+            {"type": "assistant", "requestId": "r1", "timestamp": "2026-09-05T03:31:09.000Z",
+             "message": {"model": "claude-sonnet-5", "usage": {"input_tokens": 100, "output_tokens": 10},
+                         "content": [{"type": "tool_use"}, {"type": "tool_use"}]}}])
+        self.clock.tick(2)
+        lines = s.handle({"event": "SubagentStop", "session_id": SID, "agent_id": "b1", "agent_type": "worker",
+                          "transcript_path": self.transcript})
+        self.assertEqual(lines, ["⇠ subagent worker done · 2.0s · 2 tools · 100 in / 10 out · claude-sonnet-5"])
+
     def test_subagent_failure_line(self):
         s = self.session("subactivity")
         s.handle({"event": "SubagentStart", "session_id": SID, "agent_id": "a293f253", "agent_type": "Explore"})

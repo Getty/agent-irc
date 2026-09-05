@@ -278,7 +278,7 @@ class Session:
         agent_type = str(ev.get("agent_type") or (sub["type"] if sub else "agent"))
         usage = self._subagent_usage(ev)
         duration = self.clock() - sub["started"] if sub else usage.duration
-        tools = usage.tools or (sub["tools"] if sub else 0)
+        tools = max(usage.tools, sub["tools"] if sub else 0)  # each source undercounts in a different failure mode
         parts = ["%s subagent %s done" % (G["sub_stop"], agent_type)]
         if duration is not None:
             parts.append(fmt_duration(duration))
