@@ -1,0 +1,13 @@
+{
+  "name": "agent-irc",
+  "version": "0.1.0",
+  "description": "Mirrors a session's activity into IRC: prompts, tool calls with durations, subagents, token usage. One nick per session.",
+  "author": {
+    "name": "Torsten Raudssus",
+    "email": "getty@conflict.industries"
+  },
+  "homepage": "https://github.com/Getty/agent-irc",
+  "license": "Artistic-2.0",
+  "mcpServers": "./.mcp.json",
+  "hooks": "./hooks/hooks.json"
+}
