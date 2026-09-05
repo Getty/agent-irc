@@ -290,3 +290,50 @@ class Session:
         if usage.model:
             parts.append(usage.model)
         return [" · ".join(parts)]
+
+    # -- everything else ----------------------------------------------------
+
+    def _on_stop_failure(self, ev):
+        self.turn_started = None
+        what = " — ".join(x for x in (ev.get("error_type"), first_line(ev.get("error_message"))) if x)
+        return ["%s turn failed: %s" % (G["fail"], truncate(what or "unknown", PROMPT_LIMIT))]
+
+    def _on_permission_request(self, ev):
+        name = display_tool_name(ev.get("tool_name") or "tool")
+        summary = tool_summary(ev.get("tool_name"), ev.get("tool_input"), self.cwd, self.home)
+        return ["%s permission: %s%s" % (G["perm"], name, ": " + summary if summary else "")]
+
+    def _on_notification(self, ev):
+        if ev.get("notification_type") == "idle_prompt":
+            return [G["idle"] + " waiting for input"]
+        return []
+
+    def _on_interrupt(self, ev):
+        self.turn_started = None
+        return [G["end"] + " interrupted"]
+
+    def _on_post_compact(self, ev):
+        return ["%s compacted (%s)" % (G["compact"], ev.get("trigger") or "auto")]
+
+    def _on_post_model_switch(self, ev):
+        previous = ev.get("from_model") or self.model or "?"
+        target = ev.get("to_model") or "?"
+        if ev.get("to_model"):
+            self.model = ev["to_model"]
+        return ["%s model %s → %s" % (G["model"], previous, target)]
+
+    def _on_session_end(self, ev):
+        self.ended = True
+        reason = ev.get("reason")
+        head = G["end"] + " session ended" + (" (%s)" % reason if reason else "")
+        return [head + " · " + self.summary()]
+
+    def summary(self):
+        parts = []
+        if self.started is not None:
+            parts.append(fmt_duration(self.clock() - self.started))
+        parts.append("%d turns" % self.turns)
+        parts.append("%d tools" % self.total_tools)
+        if self.total.has_tokens():
+            parts.append(self.total.tokens_text())
+        return " · ".join(parts)
