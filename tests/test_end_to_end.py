@@ -54,6 +54,43 @@ class EndToEndTests(unittest.TestCase):
             self.assertTrue(any(l.startswith("PRIVMSG #agents :⚙ shell 0.") and l.endswith(": bash -lc ls") for l in lines), lines)
             self.assertIn("initialized by codex", err)
 
+    def start_session(self, fake, tmp):
+        home = os.path.join(tmp, "home")
+        cwd = os.path.join(tmp, "proj")
+        os.makedirs(os.path.join(home, ".claude"))
+        os.makedirs(cwd)
+        with open(os.path.join(home, ".claude", "settings.json"), "w") as f:
+            json.dump({"agent-irc": {"channels": ["irc://127.0.0.1:%d/#sig" % fake.port]}}, f)
+        env = dict(os.environ, HOME=home, USER="getty")
+        proc = subprocess.Popen([sys.executable, os.path.join(ROOT, "bin", "agent-irc")], cwd=cwd, env=env,
+                                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        proc.stdin.write(rpc(1, "initialize", {"protocolVersion": "2025-06-18", "clientInfo": {"name": "claude-code"}}))
+        proc.stdin.write(rpc(2, "tools/call", {"name": "event", "arguments": {"event": "UserPromptSubmit", "session_id": SID,
+                                                                             "cwd": cwd, "prompt": "hi"}}))
+        proc.stdin.flush()
+        self.assertTrue(fake.wait_for(lambda ls: "PRIVMSG #sig :» hi" in ls))
+        return proc
+
+    def assert_quits_on(self, signum):
+        import signal as _signal
+        fake = FakeIrcServer()
+        self.addCleanup(fake.close)
+        with tempfile.TemporaryDirectory() as tmp:
+            proc = self.start_session(fake, tmp)
+            proc.send_signal(signum)
+            self.assertTrue(fake.wait_for(lambda ls: any(l.startswith("QUIT :session ended") for l in ls), timeout=5))
+            out, err = proc.communicate(timeout=10)
+            self.assertEqual(proc.returncode, 128 + signum, err)
+            self.assertNotIn("Traceback", err)
+
+    def test_sigterm_sends_quit(self):
+        import signal
+        self.assert_quits_on(signal.SIGTERM)
+
+    def test_sigint_sends_quit(self):
+        import signal
+        self.assert_quits_on(signal.SIGINT)
+
 
 if __name__ == "__main__":
     unittest.main()

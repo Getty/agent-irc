@@ -2,6 +2,7 @@
 
 import os
 import queue
+import signal
 import sys
 import threading
 import time
@@ -37,6 +38,7 @@ class App:
         self.harness = "agent"
         self.session = None
         self.connections = []
+        self.stopped = False
         self.queue = queue.Queue()
         self.worker = threading.Thread(target=self._dispatch, daemon=True, name="agent-irc-dispatch")
 
@@ -107,6 +109,9 @@ class App:
     # -- teardown -----------------------------------------------------------
 
     def shutdown(self):
+        if self.stopped:
+            return
+        self.stopped = True
         self.queue.put(None)
         self.worker.join(2.0)
         if self.session is None:
@@ -119,9 +124,27 @@ class App:
             connection.join(max(0.0, deadline - time.monotonic()))
 
 
+def install_signal_handlers(log):
+    """Turn SIGTERM/SIGINT/SIGHUP into SystemExit in the main thread, so run()'s finally sends the QUIT."""
+
+    def stop(signum, frame):
+        log("agent-irc: signal %d, shutting down" % signum)
+        raise SystemExit(128 + signum)
+
+    for name in ("SIGTERM", "SIGINT", "SIGHUP"):
+        signum = getattr(signal, name, None)
+        if signum is None:
+            continue
+        try:
+            signal.signal(signum, stop)
+        except (ValueError, OSError):
+            pass
+
+
 def main():
     def log(message):
         sys.stderr.write(message + "\n")
         sys.stderr.flush()
 
+    install_signal_handlers(log)
     App(os.path.expanduser("~"), dict(os.environ), sys.stdin, sys.stdout, log).run()

@@ -169,6 +169,16 @@ class AppTests(unittest.TestCase):
         self.assertEqual(len(FakeConnection.instances), 2)
         self.assertLess(elapsed, 3.0)
 
+    def test_shutdown_is_idempotent(self):
+        app, _ = self.run_app([
+            rpc(1, "initialize", {"clientInfo": {"name": "claude-code"}}),
+            rpc(2, "tools/call", {"name": "event", "arguments": {"event": "UserPromptSubmit", "session_id": "s",
+                                                                  "cwd": self.cwd, "prompt": "x"}}),
+        ])
+        quits_before = [c.quit for c in FakeConnection.instances]
+        app.shutdown()
+        self.assertEqual([c.quit for c in FakeConnection.instances], quits_before)
+
 
 if __name__ == "__main__":
     unittest.main()
