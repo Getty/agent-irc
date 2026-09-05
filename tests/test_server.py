@@ -103,6 +103,22 @@ class AppTests(unittest.TestCase):
         self.assertEqual(FakeConnection.instances, [])
         self.assertTrue(any("no channels configured" in l for l in self.logs))
 
+    def test_orphan_session_end_stays_quiet(self):
+        # A harness may spin up a fresh server process solely to deliver
+        # SessionEnd after the process that held the real session state is
+        # already gone (observed live against Claude Code, 2026-09-05: a
+        # SIGTERM'd connection followed by a fresh one for just this event).
+        # With no prior activity, this process must not announce a phantom
+        # session with a false "0 turns" summary.
+        app, _ = self.run_app([
+            rpc(1, "initialize", {"clientInfo": {"name": "claude-code"}}),
+            rpc(2, "tools/call", {"name": "event", "arguments": {"event": "SessionEnd", "session_id": "s",
+                                                                  "cwd": self.cwd, "reason": "other"}}),
+        ])
+        self.assertIsNone(app.session)
+        self.assertEqual(FakeConnection.instances, [])
+        self.assertTrue(any("SessionEnd with no prior state" in l for l in self.logs))
+
     def test_events_before_session_id_are_ignored(self):
         app, _ = self.run_app([
             rpc(1, "initialize", {"clientInfo": {"name": "codex"}}),

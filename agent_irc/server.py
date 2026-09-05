@@ -72,6 +72,16 @@ class App:
         if self.session is None:
             if not _usable_session_id(ev.get("session_id")):
                 return
+            if ev.get("event") == "SessionEnd":
+                # A harness may start a fresh server process to deliver
+                # SessionEnd after the process holding the real session state
+                # already exited (observed in Claude Code print mode:
+                # SIGTERM kills the connection, then a new one connects for
+                # this one event). This process never saw the session's
+                # activity, so announcing a session here would be a phantom
+                # start+end with a false "0 turns" summary. Stay quiet.
+                self.log("agent-irc: SessionEnd with no prior state, staying quiet")
+                return
             cwd = str(ev.get("cwd") or os.getcwd())
             config = load_config(self.harness, cwd, self.home, self.env, self.log)
             self.session = Session(self.harness, config.level, cwd, self.home)
