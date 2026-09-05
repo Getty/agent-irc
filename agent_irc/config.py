@@ -272,3 +272,62 @@ def is_trusted(harness, cwd, home):
     if harness == "codex":
         return codex_trusted(home, cwd)
     return claude_trusted(home, cwd)
+
+
+def merge_layers(layers):
+    """Named lists: last definition of a name wins whole. Level: last valid wins."""
+    lists = {}
+    level = "activity"
+    for layer in layers:
+        if not isinstance(layer, dict):
+            continue
+        for key, value in layer.items():
+            if LIST_KEY_RE.match(key) and isinstance(value, list):
+                lists[key] = [v for v in value if isinstance(v, str)]
+            elif key == "level" and value in LEVELS:
+                level = value
+    return lists, level
+
+
+def resolve_targets(lists, env, default_user, log=None):
+    targets = []
+    seen = set()
+    for name, urls in lists.items():
+        for url in urls:
+            try:
+                target = parse_url(expand_env(url, env), default_user)
+            except KeyError as e:
+                _log(log, "agent-irc: %s: ${%s} is not set, entry skipped" % (name, e.args[0]))
+                continue
+            except ValueError as e:
+                _log(log, "agent-irc: %s: %s, entry skipped" % (name, e))
+                continue
+            if target in seen:
+                continue
+            seen.add(target)
+            targets.append(target)
+    return targets
+
+
+def config_files(harness, cwd, home, trusted):
+    if harness == "codex":
+        files = [os.path.join(home, ".codex", "config.toml")]
+        if trusted:
+            files.append(os.path.join(cwd, ".codex", "config.toml"))
+        return files
+    files = [os.path.join(home, ".claude", "settings.json")]
+    if trusted:
+        files.append(os.path.join(cwd, ".claude", "settings.json"))
+        files.append(os.path.join(cwd, ".claude", "settings.local.json"))
+    return files
+
+
+def load_config(harness, cwd, home, env, log=None):
+    trusted = is_trusted(harness, cwd, home)
+    if not trusted:
+        _log(log, "agent-irc: %s is not trusted by %s, project config ignored" % (cwd, harness))
+    reader = read_toml_namespace if harness == "codex" else read_json_namespace
+    layers = [reader(path, log) for path in config_files(harness, cwd, home, trusted)]
+    lists, level = merge_layers(layers)
+    default_user = env.get("USER") or env.get("LOGNAME") or "agent"
+    return Config(resolve_targets(lists, env, default_user, log), level)
