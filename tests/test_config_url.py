@@ -79,6 +79,13 @@ class ExpandEnvTests(unittest.TestCase):
             expand_env("${A}${B}", {"A": "1"})
         self.assertEqual(ctx.exception.args[0], "B")
 
+    def test_expanded_password_with_at_sign_never_reaches_error_text(self):
+        url = expand_env("ircs://u:${PW}@h:notaport/#c", {"PW": "p@ss:word"})
+        with self.assertRaises(ValueError) as ctx:
+            parse_url(url, "x")
+        self.assertNotIn("ss:word", str(ctx.exception))
+        self.assertIn("***@h", str(ctx.exception))
+
 
 class RedactTests(unittest.TestCase):
     def test_redact(self):
@@ -86,6 +93,7 @@ class RedactTests(unittest.TestCase):
         self.assertEqual(redact_url("irc://u@h/#c"), "irc://***@h/#c")
         self.assertEqual(redact_url("irc://h/#c"), "irc://h/#c")
         self.assertEqual(redact_url("junk"), "junk")
+        self.assertEqual(redact_url("ircs://u:p@ss:word@h/#c"), "ircs://***@h/#c")
 
 
 if __name__ == "__main__":

@@ -46,7 +46,7 @@ _URL_RE = re.compile(
     r"^(ircs?)://(?:([^@/]*)@)?([^/:?#@]+)(?::(\d+))?/([^?]*)(?:\?(.*))?$"
 )
 
-_USERINFO_RE = re.compile(r"^([A-Za-z]+://)[^@/]*@")
+_USERINFO_RE = re.compile(r"^([A-Za-z]+://).*@")
 
 
 def redact_url(url):

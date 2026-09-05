@@ -54,6 +54,14 @@ class MergeTests(unittest.TestCase):
         got = config.resolve_targets({"channels": ["ircs://${USER}:${PW}@h/#c"]}, {"USER": "me", "PW": "s"}, "x")
         self.assertEqual((got[0].server.user, got[0].server.password), ("me", "s"))
 
+    def test_resolve_logs_redact_expanded_password(self):
+        logs = []
+        got = config.resolve_targets({"channels": ["ircs://u:${PW}@h:notaport/#c"]}, {"PW": "p@ss:word"}, "x", logs.append)
+        self.assertEqual(got, [])
+        self.assertEqual(len(logs), 1)
+        self.assertNotIn("ss:word", logs[0])
+        self.assertIn("***@h", logs[0])
+
 
 class LoadConfigTests(unittest.TestCase):
     def setUp(self):
@@ -112,6 +120,15 @@ class LoadConfigTests(unittest.TestCase):
         self.assertEqual(cfg.targets[0].server.user, "getty")
         cfg = config.load_config("claude", self.cwd, self.home, {})
         self.assertEqual(cfg.targets[0].server.user, "agent")
+
+    def test_codex_untrusted_ignores_project(self):
+        self.write("home/.codex/config.toml", '[agent-irc]\nchannels = ["%s#agents"]\n' % A)
+        self.write("proj/.codex/config.toml", '[agent-irc]\nchannels = ["%s#evil"]\nlevel = "full"\n' % B)
+        logs = []
+        cfg = config.load_config("codex", self.cwd, self.home, {"USER": "me"}, logs.append)
+        self.assertEqual(targets(cfg), [("a.example", "#agents")])
+        self.assertEqual(cfg.level, "activity")
+        self.assertTrue(any("not trusted" in l for l in logs))
 
 
 if __name__ == "__main__":
