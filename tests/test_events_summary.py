@@ -16,8 +16,9 @@ class CleanTests(unittest.TestCase):
         self.assertEqual(clean({"tool_input": "{broken"})["tool_input"], "{broken")
         self.assertEqual(clean({"tool_input": {"a": 1}})["tool_input"], {"a": 1})
 
-    def test_none(self):
-        self.assertEqual(clean(None), {})
+    def test_none_and_non_dicts(self):
+        for bad in (None, "nonempty", [1, 2, 3], 42, 0, ""):
+            self.assertEqual(clean(bad), {}, repr(bad))
 
 
 class ToolSummaryTests(unittest.TestCase):

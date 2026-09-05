@@ -24,8 +24,10 @@ _PATCH_FILE_RE = re.compile(r"^\*\*\* (?:Update|Add|Delete) File: (.+)$", re.MUL
 
 
 def clean(ev):
+    if not isinstance(ev, dict):
+        return {}
     out = {}
-    for key, value in (ev or {}).items():
+    for key, value in ev.items():
         if value is None or value == "":
             continue
         if isinstance(value, str) and _PLACEHOLDER_RE.match(value):
