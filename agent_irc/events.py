@@ -246,3 +246,47 @@ class Session:
     def _on_post_tool_use_failure(self, ev):
         error = truncate(first_line(ev.get("error_message")) or "failed", SUMMARY_LIMIT)
         return self._finish_tool(ev, G["fail"], error)
+
+    # -- subagents ----------------------------------------------------------
+
+    def _on_subagent_start(self, ev):
+        agent_id = str(ev.get("agent_id") or "?")
+        agent_type = str(ev.get("agent_type") or "agent")
+        description = self.agent_descriptions.popleft() if self.agent_descriptions else ""
+        self.subagents[agent_id] = {"type": agent_type, "desc": description, "started": self.clock(), "tools": 0}
+        line = "%s subagent %s" % (G["sub_start"], agent_type)
+        if description:
+            line += ": " + truncate(description, SUMMARY_LIMIT)
+        return [line]
+
+    def _subagent_usage(self, ev):
+        try:
+            if self.harness == "codex":
+                path = ev.get("agent_transcript_path")
+                return CodexTranscript.read_whole(path) if path else Usage()
+            main = self.transcript.path if self.transcript is not None else ev.get("transcript_path")
+            if main and self.session_id and ev.get("agent_id"):
+                return ClaudeTranscript.read_whole(
+                    claude_subagent_path(main, self.session_id, str(ev["agent_id"])))
+        except Exception:
+            pass
+        return Usage()
+
+    def _on_subagent_stop(self, ev):
+        agent_id = str(ev.get("agent_id") or "?")
+        sub = self.subagents.pop(agent_id, None)
+        agent_type = str(ev.get("agent_type") or (sub["type"] if sub else "agent"))
+        usage = self._subagent_usage(ev)
+        duration = self.clock() - sub["started"] if sub else usage.duration
+        tools = usage.tools or (sub["tools"] if sub else 0)
+        parts = ["%s subagent %s done" % (G["sub_stop"], agent_type)]
+        if duration is not None:
+            parts.append(fmt_duration(duration))
+        parts.append("%d tools" % tools)
+        self.total_tools += tools
+        if usage.has_tokens():
+            parts.append(usage.tokens_text())
+            self.total.add(Usage(input=usage.input, cached=usage.cached, output=usage.output))
+        if usage.model:
+            parts.append(usage.model)
+        return [" · ".join(parts)]
