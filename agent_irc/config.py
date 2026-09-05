@@ -93,3 +93,163 @@ def expand_env(s, env):
         return env[name]
 
     return _VAR_RE.sub(repl, s)
+
+
+def _log(log, message):
+    if log is not None:
+        log(message)
+
+
+def read_json_namespace(path, log=None):
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except OSError:
+        return {}
+    except ValueError as e:
+        _log(log, "agent-irc: %s: invalid JSON (%s), skipped" % (path, e))
+        return {}
+    ns = data.get(NAMESPACE) if isinstance(data, dict) else None
+    return ns if isinstance(ns, dict) else {}
+
+
+_HEADER_RE = re.compile(r"^\s*\[([^\]]+)\]\s*(?:#.*)?$")
+_STRING_RE = re.compile(r'"((?:[^"\\]|\\.)*)"|\'([^\']*)\'')
+_KEY_RE = re.compile(r"^[ \t]*([A-Za-z0-9_-]+)[ \t]*=[ \t]*", re.MULTILINE)
+_ESCAPES = {'"': '"', "\\": "\\", "n": "\n", "t": "\t"}
+
+
+def _toml_table_body(text, table):
+    lines = []
+    inside = False
+    for line in text.splitlines():
+        m = _HEADER_RE.match(line)
+        if m:
+            name = m.group(1).strip()
+            inside = name == table or name == '"%s"' % table
+            continue
+        if inside:
+            lines.append(line)
+    return "\n".join(lines)
+
+
+def _toml_unescape(m):
+    raw = m.group(1)
+    if raw is None:
+        return m.group(2)
+    return re.sub(r'\\(["\\nt])', lambda e: _ESCAPES[e.group(1)], raw)
+
+
+def parse_toml_table(text, table):
+    """Minimal TOML: string and string-array values of one table. Fallback for Python < 3.11."""
+    body = _toml_table_body(text, table)
+    result = {}
+    pos = 0
+    while True:
+        m = _KEY_RE.search(body, pos)
+        if not m:
+            return result
+        key, pos = m.group(1), m.end()
+        if body.startswith("[", pos):
+            end = body.find("]", pos)
+            if end < 0:
+                return result
+            result[key] = [_toml_unescape(s) for s in _STRING_RE.finditer(body[pos + 1:end])]
+            pos = end + 1
+            continue
+        sm = _STRING_RE.match(body, pos)
+        if sm:
+            result[key] = _toml_unescape(sm)
+            pos = sm.end()
+        else:
+            nl = body.find("\n", pos)
+            pos = len(body) if nl < 0 else nl + 1
+
+
+def _load_toml(path, log=None):
+    """Whole file via tomllib, {} on read/parse error, None when tomllib is unavailable."""
+    try:
+        import tomllib
+    except ImportError:
+        return None
+    try:
+        with open(path, "rb") as f:
+            return tomllib.load(f)
+    except OSError:
+        return {}
+    except Exception as e:  # tomllib.TOMLDecodeError
+        _log(log, "agent-irc: %s: invalid TOML (%s), skipped" % (path, e))
+        return {}
+
+
+def _read_text(path):
+    try:
+        with open(path, encoding="utf-8") as f:
+            return f.read()
+    except OSError:
+        return None
+
+
+def read_toml_namespace(path, log=None):
+    data = _load_toml(path, log)
+    if data is not None:
+        ns = data.get(NAMESPACE) if isinstance(data, dict) else None
+        return ns if isinstance(ns, dict) else {}
+    text = _read_text(path)
+    if text is None:
+        return {}
+    return parse_toml_table(text, NAMESPACE)
+
+
+def ancestors(path):
+    path = os.path.abspath(path)
+    out = []
+    while True:
+        out.append(path)
+        parent = os.path.dirname(path)
+        if parent == path:
+            return out
+        path = parent
+
+
+def claude_trusted(home, cwd):
+    try:
+        with open(os.path.join(home, ".claude.json"), encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return False
+    projects = data.get("projects") if isinstance(data, dict) else None
+    if not isinstance(projects, dict):
+        return False
+    for p in ancestors(cwd):
+        entry = projects.get(p)
+        if isinstance(entry, dict) and entry.get("hasTrustDialogAccepted") is True:
+            return True
+    return False
+
+
+def codex_trusted(home, cwd):
+    path = os.path.join(home, ".codex", "config.toml")
+    data = _load_toml(path)
+    if data is not None:
+        projects = data.get("projects") if isinstance(data, dict) else None
+        if not isinstance(projects, dict):
+            return False
+        for p in ancestors(cwd):
+            entry = projects.get(p)
+            if isinstance(entry, dict) and entry.get("trust_level") == "trusted":
+                return True
+        return False
+    text = _read_text(path)
+    if text is None:
+        return False
+    for p in ancestors(cwd):
+        if parse_toml_table(text, 'projects."%s"' % p).get("trust_level") == "trusted":
+            return True
+    return False
+
+
+def is_trusted(harness, cwd, home):
+    if harness == "codex":
+        return codex_trusted(home, cwd)
+    return claude_trusted(home, cwd)
