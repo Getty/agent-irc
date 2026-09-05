@@ -65,6 +65,22 @@ class McpTests(unittest.TestCase):
         _, _, _, logs = run([])
         self.assertTrue(any("not JSON" in l for l in logs))
 
+    def test_broken_stdout_ends_the_loop_quietly(self):
+        class BrokenOut:
+            def write(self, _):
+                raise BrokenPipeError(32, "Broken pipe")
+
+            def flush(self):
+                pass
+
+        events, logs = [], []
+        stdin = io.StringIO(json.dumps({"jsonrpc": "2.0", "id": 1, "method": "ping"}) + "\n"
+                            + json.dumps({"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                                          "params": {"name": "event", "arguments": {"event": "X"}}}) + "\n")
+        mcp.serve(stdin, BrokenOut(), lambda p: None, events.append, logs.append)
+        self.assertEqual(events, [])
+        self.assertTrue(any("stdout gone" in l for l in logs))
+
 
 if __name__ == "__main__":
     unittest.main()

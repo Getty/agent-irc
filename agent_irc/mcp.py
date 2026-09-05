@@ -71,4 +71,8 @@ def serve(stdin, stdout, on_initialize, on_event, log, version="0"):
             params = {}
         response = {"jsonrpc": "2.0", "id": message["id"]}
         response.update(_dispatch(message["method"], params, on_initialize, on_event, log, version))
-        _write(stdout, response)
+        try:
+            _write(stdout, response)
+        except (OSError, ValueError) as e:  # BrokenPipeError is an OSError; ValueError = closed file
+            log("agent-irc: stdout gone (%s), stopping" % e.__class__.__name__)
+            return
