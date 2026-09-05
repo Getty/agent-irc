@@ -3,6 +3,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 from tests.fakeirc import FakeIrcServer
@@ -90,6 +91,24 @@ class EndToEndTests(unittest.TestCase):
     def test_sigint_sends_quit(self):
         import signal
         self.assert_quits_on(signal.SIGINT)
+
+    def test_sigint_then_sigterm_still_sends_quit(self):
+        # Live-observed (Task 20, 2026-09-05): Claude Code sends SIGINT, and
+        # ~100ms later, having found the process still alive, escalates to
+        # SIGTERM -- close enough behind the first signal to land while
+        # shutdown() is still blocked inside a join(). Reproduces the race.
+        import signal
+        fake = FakeIrcServer()
+        self.addCleanup(fake.close)
+        with tempfile.TemporaryDirectory() as tmp:
+            proc = self.start_session(fake, tmp)
+            proc.send_signal(signal.SIGINT)
+            time.sleep(0.1)
+            proc.send_signal(signal.SIGTERM)
+            self.assertTrue(fake.wait_for(lambda ls: any(l.startswith("QUIT :session ended") for l in ls), timeout=5))
+            out, err = proc.communicate(timeout=10)
+            self.assertIn(proc.returncode, (128 + signal.SIGINT, 128 + signal.SIGTERM), err)
+            self.assertNotIn("Traceback", err)
 
 
 if __name__ == "__main__":

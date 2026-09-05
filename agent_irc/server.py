@@ -125,9 +125,25 @@ class App:
 
 
 def install_signal_handlers(log):
-    """Turn SIGTERM/SIGINT/SIGHUP into SystemExit in the main thread, so run()'s finally sends the QUIT."""
+    """Turn SIGTERM/SIGINT/SIGHUP into SystemExit in the main thread, so run()'s finally sends the QUIT.
+
+    Only the first signal raises. begin_close() only asks the connection
+    thread to send the QUIT; it does not send it itself, so shutdown()'s
+    join()s are what actually give that thread time to run. A harness that
+    escalates fast (Claude Code sends SIGINT, then ~100ms later SIGTERM,
+    live-observed 2026-09-05, Task 20) can land its second signal while
+    shutdown() is still blocked inside one of those join()s, unwinding it
+    before the QUIT is ever written. A later signal is logged and otherwise
+    ignored; shutdown()'s own 2s budgets already bound the wait.
+    """
+    stopping = False
 
     def stop(signum, frame):
+        nonlocal stopping
+        if stopping:
+            log("agent-irc: signal %d, already shutting down" % signum)
+            return
+        stopping = True
         log("agent-irc: signal %d, shutting down" % signum)
         raise SystemExit(128 + signum)
 
