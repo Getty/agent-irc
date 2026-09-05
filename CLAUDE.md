@@ -65,19 +65,51 @@ hooks are skipped silently. `codex exec` needs
 
 **`threading.Thread` owns `_handle`.** On Python 3.13 `Thread.__init__` sets an instance attribute `_handle`, which shadows any method of that name on a subclass; the connection thread's line handler is therefore called `_dispatch`. Do not name a `Thread` method `_handle`.
 
+**Claude Code auto-loads `hooks/hooks.json`; don't also declare it.** Declaring
+`"hooks": "./hooks/hooks.json"` in `.claude-plugin/plugin.json` points at the
+same file Claude Code loads automatically by convention. Claude Code then
+logs `Duplicate hooks file detected: ... The standard hooks/hooks.json is
+loaded automatically, so manifest.hooks should only reference additional
+hook files` and marks that plugin's hook loading failed (verified live
+2026-09-05: hooks still ran via the auto-discovered copy, but the error is
+real and pointless). `.claude-plugin/plugin.json` has no `hooks` key;
+`.codex-plugin/plugin.json` keeps it, since Codex needs it explicit.
+
+**A harness can deliver `SessionEnd` to a brand-new, stateless process.**
+Claude Code (`-p` mode) tears down the original MCP connection (SIGINT then
+SIGTERM) right after the last turn, then reconnects a fresh server process
+solely to call `SessionEnd`. That process never saw any of the session's
+activity, so it must not announce a summary — `App._handle` recognizes a
+`SessionEnd` as literally the first event a fresh process sees and stays
+quiet instead of a false "0 turns · 0 tools" line.
+
+**Codex won't substitute `${CLAUDE_PLUGIN_ROOT}` (or `${PLUGIN_ROOT}`) in
+`.mcp.json`.** For a plugin registered via `"mcpServers": "./.mcp.json"`,
+Codex 0.153.4 passes the string through literally, resolves a relative arg
+against the *session's* cwd (not the plugin root), and exposes no
+environment variable a plugin could read instead. The bundled server
+therefore never starts under Codex; see spec §14 item 7 and the table below.
+
+**Codex refuses `mcp_tool` hooks on `SessionEnd`.** Independent of the above:
+`warning: skipping MCP tool hook ...: SessionEnd MCP hooks are not
+supported`. Even a working server would never receive it from Codex via this
+hook type.
+
 ## Verified against real harnesses
 
-Filled in by the live verification (plan Task 18). Each item records the
-observed behaviour and the date.
+Filled in by the live verification (plan Task 18), 2026-09-05, against
+`claude` 2.1.261 and `codex` 0.153.4. Each item records the observed
+behaviour and the date; "not observed" means the prerequisite step never
+produced the evidence (noted why).
 
 | Item | Claude Code | Codex |
 |---|---|---|
-| `clientInfo.name` in `initialize` | | |
-| `${tool_input}` substitution: object or string | | |
-| absent field: empty string or literal placeholder | | |
-| `server` reference for the plugin MCP server in `mcp_tool` hooks | `plugin:agent-irc:irc` | |
-| `${CLAUDE_PLUGIN_ROOT}` substituted in `.mcp.json` args | | |
-| MCP server started at session start, shared by subagents | | |
-| hook-triggered `tools/call` passes without approval | | |
-| `SessionEnd` reaches the server before stdin closes | | |
-| `async: true` keeps delivery order | | |
+| `clientInfo.name` in `initialize` | `"claude-code"` (2026-09-05) | not observed: MCP handshake never completes (item 7) |
+| `${tool_input}` substitution: object or string | string, JSON-encoded (`clean()` parses it) (2026-09-05) | not observed (item 7) |
+| absent field: empty string or literal placeholder | empty string, never `${name}` (2026-09-05) | not observed (item 7) |
+| `server` reference for the plugin MCP server in `mcp_tool` hooks | `plugin:agent-irc:irc` | `plugin:agent-irc:irc` — same value addresses the server correctly; only the server itself fails to start (2026-09-05) |
+| `${CLAUDE_PLUGIN_ROOT}` substituted in `.mcp.json` args | yes, server starts and runs (2026-09-05) | no — confirmed broken; `${PLUGIN_ROOT}` and a `cwd`-based form also fail; no workaround found (2026-09-05) |
+| MCP server started at session start, shared by subagents | yes — one process served the main turn and its Explore subagent's own tool call (2026-09-05) | not observed (item 7) |
+| hook-triggered `tools/call` passes without approval | yes, no approval prompt across 5 runs, no config needed (2026-09-05) | not observed: blocked by item 7 before any approval gate is reached |
+| `SessionEnd` reaches the server before stdin closes | reaches a *fresh, stateless* process (see trap above); fixed to stay silent instead of a false summary (2026-09-05) | no — Codex rejects `mcp_tool` hooks on `SessionEnd` outright (2026-09-05) |
+| `async: true` keeps delivery order | not always: `PostToolUse` for a parent Agent tool call was observed to arrive before `SubagentStart` for the very subagent it spawned; handled without crashing (2026-09-05) | not observed (item 7) |

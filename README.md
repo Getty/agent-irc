@@ -34,6 +34,13 @@ codex plugin add agent-irc@getty
 
 Codex asks once to trust the plugin's hooks. Until you do, nothing happens.
 
+**Codex 0.153.x cannot run this plugin yet.** Codex does not substitute
+`${CLAUDE_PLUGIN_ROOT}` (or `${PLUGIN_ROOT}`) inside a plugin's `.mcp.json`,
+so the bundled MCP server never starts ("MCP client for `irc` failed to
+start: ... connection closed: initialize response") and no event reaches
+IRC. Verified live 2026-09-05; see `CLAUDE.md`'s verification table. Claude
+Code is unaffected.
+
 ## Configure
 
 Configuration lives in the harness's own settings, under the key `agent-irc`.
