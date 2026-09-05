@@ -89,6 +89,20 @@ class ConnectionTests(unittest.TestCase):
         lines = fake.lines()
         self.assertLess(lines.index("JOIN #a"), lines.index("PRIVMSG #a :early"))
 
+    def test_close_before_welcome_still_joins_and_quits(self):
+        fake = FakeIrcServer(welcome_delay=0.4)
+        self.addCleanup(fake.close)
+        conn = self.connect(fake, channels=("#late",))
+        conn.send_message("queued early")
+        self.assertTrue(fake.wait_for(lambda ls: any(l.startswith("USER ") for l in ls)))
+        conn.close("bye early", 3.0)   # 001 has not been sent yet (0.4 s delay)
+        self.assertTrue(fake.wait_for(lambda ls: "QUIT :bye early" in ls))
+        lines = fake.lines()
+        self.assertIn("JOIN #late", lines)
+        self.assertIn("PRIVMSG #late :queued early", lines)
+        self.assertLess(lines.index("JOIN #late"), lines.index("PRIVMSG #late :queued early"))
+        self.assertLess(lines.index("PRIVMSG #late :queued early"), lines.index("QUIT :bye early"))
+
 
 if __name__ == "__main__":
     unittest.main()

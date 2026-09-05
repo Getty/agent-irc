@@ -4,6 +4,7 @@ import os
 import queue
 import sys
 import threading
+import time
 
 from agent_irc import __version__, mcp
 from agent_irc.config import load_config
@@ -102,7 +103,10 @@ class App:
             return
         message = "session ended · " + self.session.summary()
         for connection in self.connections:
-            connection.close(message, timeout=2.0)
+            connection.begin_close(message)
+        deadline = time.monotonic() + 2.0
+        for connection in self.connections:
+            connection.join(max(0.0, deadline - time.monotonic()))
 
 
 def main():

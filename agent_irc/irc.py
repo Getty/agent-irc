@@ -99,9 +99,16 @@ class IrcConnection(threading.Thread):
                     self.dropped += 1
                 self.queue.append((channel, text))
 
-    def close(self, quit_message, timeout=2.0):
+    def begin_close(self, quit_message):
+        """Ask the thread to drain, QUIT and exit; returns at once.
+
+        close() = begin_close() + join().
+        """
         self.quit_message = quit_message
         self.stop_event.set()
+
+    def close(self, quit_message, timeout=2.0):
+        self.begin_close(quit_message)
         self.join(timeout)
 
     # -- thread body --------------------------------------------------------
@@ -164,31 +171,34 @@ class IrcConnection(threading.Thread):
             self._read(timeout)
 
     def _finish(self):
-        """On stop: let registration in flight complete, flush the queue, then quit.
+        """On stop: let registration in flight complete, flush the queue,
+        quit, then wait for the peer to close -- all within one 1.5s budget.
 
-        Without this, a close() requested before the 001 arrives would never
-        read it, so the connection would quit without ever joining or
-        delivering the messages already queued for it.
+        Without waiting for registration, a close() requested before the 001
+        arrives would never read it, so the connection would quit without
+        ever joining or delivering the messages already queued for it.
+        Without waiting for the close afterwards, unread data left in the
+        receive buffer (a delayed JOIN ack, the server's closing ERROR) makes
+        Linux answer close() with an RST instead of a clean FIN, which can
+        make the peer drop the very bytes -- JOIN, PRIVMSG, QUIT -- we just
+        sent it.
         """
         deadline = self.clock() + 1.5
         while not self.registered and self.clock() < deadline:
             self._read(min(0.2, max(deadline - self.clock(), 0.0)))
         self._drain(deadline)
         self._raw("QUIT :" + self.quit_message)
-        self._wait_for_close(self.clock() + 0.5)
+        self._wait_for_close(deadline)
 
     def _wait_for_close(self, deadline):
-        """Drain anything still arriving (a delayed JOIN ack, the server's
-        closing ERROR) until the peer closes the connection or we time out.
-
-        Closing a socket with unread data left in its receive buffer makes
-        Linux send an RST instead of a clean FIN, which can make the peer
-        drop the very bytes -- JOIN, the queued PRIVMSGs, QUIT -- we just
-        sent it, so we must not call close() while any of that is pending.
+        """Drain anything still arriving until the peer closes the
+        connection, the shared stop deadline passes, or 0.5s elapses --
+        whichever comes first.
         """
+        stop = min(deadline, self.clock() + 0.5)
         try:
-            while self.clock() < deadline:
-                self._read(min(0.2, max(deadline - self.clock(), 0.0)))
+            while self.clock() < stop:
+                self._read(min(0.2, max(stop - self.clock(), 0.0)))
         except ConnectionError:
             pass
 

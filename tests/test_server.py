@@ -3,6 +3,7 @@ import json
 import os
 import tempfile
 import threading
+import time
 import unittest
 
 from agent_irc.server import App, detect_harness
@@ -24,8 +25,15 @@ class FakeConnection:
     def send_message(self, text):
         self.messages.append(text)
 
-    def close(self, quit_message, timeout=2.0):
+    def begin_close(self, quit_message):
         self.quit = quit_message
+
+    def join(self, timeout=None):
+        pass
+
+    def close(self, quit_message, timeout=2.0):
+        self.begin_close(quit_message)
+        self.join(timeout)
 
 
 def rpc(id_, method, params=None):
@@ -53,10 +61,10 @@ class AppTests(unittest.TestCase):
             json.dump({"agent-irc": {"channels": [A + "#agents", A + "#log"], "level": "activity"}}, f)
         self.logs = []
 
-    def run_app(self, lines):
+    def run_app(self, lines, connection_factory=FakeConnection):
         stdin = io.StringIO("".join(lines))
         stdout = io.StringIO()
-        app = App(self.home, {"USER": "getty"}, stdin, stdout, self.logs.append, connection_factory=FakeConnection)
+        app = App(self.home, {"USER": "getty"}, stdin, stdout, self.logs.append, connection_factory=connection_factory)
         app.run()
         return app, stdout.getvalue()
 
@@ -113,6 +121,37 @@ class AppTests(unittest.TestCase):
         ])
         self.assertEqual([(c.server.host, c.channels) for c in FakeConnection.instances],
                          [("a.example", ["#a", "#c"]), ("b.example", ["#b"])])
+
+    def test_shutdown_delivers_quit_to_every_connection(self):
+        with open(os.path.join(self.home, ".claude", "settings.json"), "w") as f:
+            json.dump({"agent-irc": {"channels": [A + "#a", "irc://u:p@b.example/#b"]}}, f)
+        self.run_app([
+            rpc(1, "initialize", {"clientInfo": {"name": "claude-code"}}),
+            rpc(2, "tools/call", {"name": "event", "arguments": {"event": "UserPromptSubmit", "session_id": "s",
+                                                                  "cwd": self.cwd, "prompt": "x"}}),
+        ])
+        self.assertEqual(len(FakeConnection.instances), 2)
+        quits = [c.quit for c in FakeConnection.instances]
+        self.assertTrue(all(q is not None for q in quits))
+        self.assertEqual(quits[0], quits[1])
+        self.assertTrue(quits[0].startswith("session ended · "))
+
+    def test_shutdown_is_bounded(self):
+        class SlowJoinConnection(FakeConnection):
+            def join(self, timeout=None):
+                time.sleep(min(timeout if timeout is not None else 5, 5))
+
+        with open(os.path.join(self.home, ".claude", "settings.json"), "w") as f:
+            json.dump({"agent-irc": {"channels": [A + "#a", "irc://u:p@b.example/#b"]}}, f)
+        start = time.monotonic()
+        self.run_app([
+            rpc(1, "initialize", {"clientInfo": {"name": "claude-code"}}),
+            rpc(2, "tools/call", {"name": "event", "arguments": {"event": "UserPromptSubmit", "session_id": "s",
+                                                                  "cwd": self.cwd, "prompt": "x"}}),
+        ], connection_factory=SlowJoinConnection)
+        elapsed = time.monotonic() - start
+        self.assertEqual(len(FakeConnection.instances), 2)
+        self.assertLess(elapsed, 3.0)
 
 
 if __name__ == "__main__":
