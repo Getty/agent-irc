@@ -29,7 +29,12 @@ class ManifestTests(unittest.TestCase):
         m = load(".claude-plugin/plugin.json")
         self.assertEqual(m["name"], "agent-irc")
         self.assertEqual(m["mcpServers"], "./.mcp.json")
-        self.assertEqual(m["hooks"], "./hooks/hooks.json")
+        # Claude Code auto-loads hooks/hooks.json from its standard location;
+        # declaring it again in manifest.hooks makes Claude Code treat it as
+        # an additional file pointing at the same path and log "Duplicate
+        # hooks file detected", which flags the whole plugin's hook loading
+        # as failed (observed live 2026-09-05, see CLAUDE.md).
+        self.assertNotIn("hooks", m)
 
     def test_codex_manifest(self):
         m = load(".codex-plugin/plugin.json")
