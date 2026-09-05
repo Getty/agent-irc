@@ -92,25 +92,83 @@ and `${PLUGIN_ROOT}` arrive verbatim, the server starts in the session's cwd,
 and no environment variable names the install root. The only thing the plugin
 knows is its own name, so `.mcp.codex.json` runs an inline bootstrap that
 globs the newest `plugins/cache/*/agent-irc/*/bin/agent-irc` under
-`$CODEX_HOME` (default `~/.codex`). Codex also refuses `mcp_tool` hooks on
-`SessionEnd`; `hooks/codex.json` leaves it out, and the QUIT summary on stdin
-EOF is the session's end line there.
+`$CODEX_HOME` (default `~/.codex`). Verified live 2026-09-05 (Task 19): the
+bootstrap works, the server starts and real events reach IRC. Codex also
+refuses `mcp_tool` hooks on `SessionEnd`; `hooks/codex.json` leaves it out.
+
+**Codex's `mcp_tool` hook must address the server by its bare name, not the
+plugin-qualified form.** `hooks/hooks.json`'s `"server": "plugin:agent-irc:irc"`
+addresses the server correctly for Claude Code, but under Codex 0.153.4 that
+exact same value makes the hook silently never call `tools/call` at all — no
+warning, no error, just `hook: X` immediately followed by `hook: X Failed` in
+`codex exec`'s own text UI, verified with `RUST_LOG=debug` showing no
+`tools/call` JSON-RPC message ever leaves the process. Codex wants the bare
+name declared as the key in `.mcp.codex.json` (`"irc"`) instead. Verified live
+2026-09-05 (Task 19): switching just this field is what turns the identical
+"Failed" into "Completed" and produces the first real `tools/call`.
+
+**Codex hard-fails an `mcp_tool` hook whose `input` references a placeholder
+it doesn't recognise for that event — no partial substitution.** Unlike
+Claude Code (which fills an absent field with `""`), Codex rejects the whole
+hook, with the same silent `Failed`/no-`tools/call` symptom as the server
+address bug above, if `input` contains `"${name}"` for a `name` that isn't
+part of that specific event's own schema. This is *narrower* than "the field
+is present in the event's JSON": a `type: "command"` hook dump showed
+`agent_id`/`agent_type` genuinely present in a `PreToolUse` payload for a
+subagent's own tool call, yet an `mcp_tool` hook using `"${agent_id}"` in
+`PreToolUse`'s `input` still hard-fails every time, including the *main*
+turn's tool calls where `agent_id` is legitimately absent. `hooks/codex.json`
+therefore gives each event only the field names confirmed live (by dumping
+the real payload to a temporary `command` hook) to be safe for that event —
+see `tests/test_manifests.py`'s `test_codex_hooks_use_a_per_event_field_whitelist`
+for the exact sets and how they were obtained. Interrupt, PermissionRequest
+and PostCompact couldn't be triggered from `codex exec` and conservatively
+get only the fields every other event was confirmed to share (`event`,
+`session_id`, `cwd`, `transcript_path`, `model`, `turn_id`).
+
+**`SubagentStart`/`SubagentStop` `mcp_tool` hooks never fire under Codex
+0.153.4, regardless of `input` content.** Live-verified 2026-09-05 (Task 19):
+spawning a real sub-agent (`spawn_agent` + `wait_agent`) produces no
+`tools/call` and no IRC line for either event, with the base field set alone
+(known-safe everywhere else), with the fuller `agent_id`/`agent_type` set, and
+with no fields at all — so this is not the placeholder-whitelist bug above,
+it looks like these two event types just aren't wired to the `mcp_tool` hook
+dispatch path at all in this Codex version (`type: "command"` hooks for the
+same two events, by contrast, do fire and were how the payload shapes above
+were confirmed). No workaround found; `hooks/codex.json` keeps the fuller
+field set anyway on the chance a future Codex build fixes the dispatch.
+Because Codex runs one MCP server for the whole session regardless (see the
+table below), the main turn's own tool calls and IRC lines are unaffected —
+only subagent start/stop announcements are silently missing.
+
+**Codex may not give the MCP server time to send its own closing line either.**
+`SessionEnd` is refused outright (above), but the *fallback* — the server
+noticing stdin close and sending IRC `QUIT` from `App.shutdown()` — was also
+not observed live (2026-09-05, Task 19): across repeated `codex exec` runs,
+`RUST_LOG=debug` showed `RunningService dropped without explicit close()...
+closed asynchronously` for the MCP connection during Codex's own shutdown,
+and no `QUIT` ever reached the fake ircd, with the server process already
+gone by the time it was checked. Whether Codex kills the child before the
+async drop completes, or drops the pipe in a way our `for raw in stdin` loop
+never sees as EOF, wasn't diagnosed further. Practically: a Codex session
+today ends with no closing IRC line at all, not even the `QUIT` summary.
 
 ## Verified against real harnesses
 
 Filled in by the live verification (plan Task 18), 2026-09-05, against
-`claude` 2.1.261 and `codex` 0.153.4. Each item records the observed
-behaviour and the date; "not observed" means the prerequisite step never
-produced the evidence (noted why).
+`claude` 2.1.261 and `codex` 0.153.4; the Codex column was re-verified
+2026-09-05 (Task 19) after the self-locating bootstrap and the hook fixes
+below. Each item records the observed behaviour and the date; "not observed"
+means the prerequisite step never produced the evidence (noted why).
 
 | Item | Claude Code | Codex |
 |---|---|---|
-| `clientInfo.name` in `initialize` | `"claude-code"` (2026-09-05) | not observed: MCP handshake never completes (item 7) |
-| `${tool_input}` substitution: object or string | string, JSON-encoded (`clean()` parses it) (2026-09-05) | not observed (item 7) |
-| absent field: empty string or literal placeholder | empty string, never `${name}` (2026-09-05) | not observed (item 7) |
-| `server` reference for the plugin MCP server in `mcp_tool` hooks | `plugin:agent-irc:irc` | `plugin:agent-irc:irc` — same value addresses the server correctly; only the server itself fails to start (2026-09-05) |
-| `${CLAUDE_PLUGIN_ROOT}` substituted in `.mcp.json` args | yes, server starts and runs (2026-09-05) | no — confirmed broken; `${PLUGIN_ROOT}` and a `cwd`-based form also fail; no workaround found (2026-09-05) |
-| MCP server started at session start, shared by subagents | yes — one process served the main turn and its Explore subagent's own tool call (2026-09-05) | not observed (item 7) |
-| hook-triggered `tools/call` passes without approval | yes, no approval prompt across 5 runs, no config needed (2026-09-05) | not observed: blocked by item 7 before any approval gate is reached |
-| `SessionEnd` reaches the server before stdin closes | reaches a *fresh, stateless* process with no session to summarise (see trap above); fixed to stay quiet instead of announcing anything (2026-09-05) | no — Codex rejects `mcp_tool` hooks on `SessionEnd` outright (2026-09-05) |
-| `async: true` keeps delivery order | not always: `PostToolUse` for a parent Agent tool call was observed to arrive before `SubagentStart` for the very subagent it spawned; handled without crashing (2026-09-05) | not observed (item 7) |
+| `clientInfo.name` in `initialize` | `"claude-code"` (2026-09-05) | `"codex-mcp-client"` (2026-09-05); `detect_harness()` maps it to `"codex"` |
+| `${tool_input}` substitution: object or string | string, JSON-encoded (`clean()` parses it) (2026-09-05) | same: a JSON-encoded string once inside the `mcp_tool` `input` template; confirmed by a correctly-formatted `⚙ Bash 0.1s: echo verify-ok` IRC line (2026-09-05) |
+| absent field: empty string or literal placeholder | empty string, never `${name}` (2026-09-05) | not independently confirmed — Codex's per-event field whitelist (see trap above) is a static, all-or-nothing check, not a per-instance one; no test exercised a field that's valid for an event but unpopulated in one particular instance of it (2026-09-05) |
+| `server` reference for the plugin MCP server in `mcp_tool` hooks | `plugin:agent-irc:irc` | must be the bare name from `.mcp.codex.json` (`"irc"`); the plugin-qualified form silently never calls `tools/call` (2026-09-05, see trap above) |
+| `${CLAUDE_PLUGIN_ROOT}` substituted in `.mcp.json` args | yes, server starts and runs (2026-09-05) | n/a — Codex never substitutes it; `.mcp.codex.json`'s self-locating bootstrap works instead, confirmed live: server starts, `tools/list` succeeds, and real `tools/call` traffic for `UserPromptSubmit`/`PreToolUse`/`PostToolUse`/`Stop` reaches IRC (2026-09-05) |
+| MCP server started at session start, shared by subagents | yes — one process served the main turn and its Explore subagent's own tool call (2026-09-05) | yes — one `irc` MCP connection for the whole session served the main turn's `Bash` call and the spawned sub-agent's own `wait_agent`/tool calls alike (2026-09-05) |
+| hook-triggered `tools/call` passes without approval | yes, no approval prompt across 5 runs, no config needed (2026-09-05) | yes, no approval prompt across every `codex exec --dangerously-bypass-hook-trust` run once the server-name and field-whitelist fixes were in place (2026-09-05) |
+| `SessionEnd` reaches the server before stdin closes | reaches a *fresh, stateless* process with no session to summarise (see trap above); fixed to stay quiet instead of announcing anything (2026-09-05) | no — Codex rejects `mcp_tool` hooks on `SessionEnd` outright, and the stdin-EOF fallback wasn't observed to fire either: no `QUIT` reached the fake ircd in repeated runs, with the server process already gone by the time it was checked (2026-09-05, see trap above) |
+| `async: true` keeps delivery order | not always: `PostToolUse` for a parent Agent tool call was observed to arrive before `SubagentStart` for the very subagent it spawned; handled without crashing (2026-09-05) | not observed the same way: `SubagentStart`/`SubagentStop` `mcp_tool` hooks never fired at all in any configuration tried, so there was nothing to compare ordering against (2026-09-05, see trap above) |

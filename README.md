@@ -33,8 +33,10 @@ codex plugin add agent-irc@getty
 ```
 
 Codex asks once to trust the plugin's hooks. Until you do, nothing happens.
-Codex sessions end with the QUIT summary only; Codex does not deliver
-`SessionEnd` to MCP tool hooks.
+Codex does not deliver `SessionEnd` to MCP tool hooks, and live testing found
+it doesn't reliably give the server time to send its own closing line either
+— a Codex session's activity reaches IRC, but currently without a final
+summary line. See `CLAUDE.md` for details.
 
 ## Configure
 
