@@ -1,0 +1,60 @@
+import unittest
+
+from agent_irc import irc
+from agent_irc.config import Server
+from agent_irc.irc import FloodBucket, IrcConnection
+from tests.fakeirc import FakeIrcServer
+
+
+class ReconnectTests(unittest.TestCase):
+    def setUp(self):
+        self.fake = FakeIrcServer()
+        self.addCleanup(self.fake.close)
+        self.delays = []
+        self.logs = []
+        self.conn = IrcConnection(Server("irc", "127.0.0.1", self.fake.port, "u", None, False), ["#a"],
+                                  "proj", "codex 01a ~/p", self.logs.append,
+                                  wait=self.delays.append, bucket=FloodBucket(burst=10000, interval=0.0001))
+        self.conn.start()
+        self.addCleanup(self.conn.close, "bye", 2.0)
+
+    def test_reconnects_and_delivers_queued_lines(self):
+        self.assertTrue(self.fake.wait_for(lambda ls: "JOIN #a" in ls))
+        self.fake.drop_all()
+        self.assertTrue(self.fake.wait_for(lambda ls: ls.count("JOIN #a") == 2))
+        self.conn.send_message("after reconnect")
+        self.assertTrue(self.fake.wait_for(lambda ls: "PRIVMSG #a :after reconnect" in ls))
+        self.assertEqual(self.delays[:1], [5])
+        self.assertEqual(self.conn.attempts, 0)
+
+    def test_backoff_sequence_when_server_is_gone(self):
+        self.assertTrue(self.fake.wait_for(lambda ls: "JOIN #a" in ls))
+        self.fake.close()
+        deadline = 200
+        while len(self.delays) < 6 and deadline:
+            deadline -= 1
+            import time
+            time.sleep(0.02)
+        self.assertEqual(self.delays[:6], [5, 10, 20, 40, 60, 60])
+
+    def test_queue_cap_drops_oldest_and_notes_it(self):
+        # Fill the queue before the thread starts, so the cap is hit deterministically.
+        self.conn.close("unused", 2.0)
+        conn = IrcConnection(Server("irc", "127.0.0.1", self.fake.port, "u", None, False), ["#q"],
+                             "proj", "codex 01a ~/p", self.logs.append,
+                             wait=self.delays.append, bucket=FloodBucket(burst=10000, interval=0.0001))
+        for i in range(irc.QUEUE_LIMIT + 5):
+            conn.send_message("m%d" % i)
+        self.assertEqual(conn.dropped, 5)
+        conn.start()
+        self.addCleanup(conn.close, "bye", 2.0)
+        self.assertTrue(self.fake.wait_for(lambda ls: "PRIVMSG #q :… dropped 5 lines" in ls, timeout=15))
+        lines = [l for l in self.fake.lines() if l.startswith("PRIVMSG #q")]
+        self.assertEqual(lines[0], "PRIVMSG #q :m5")
+        self.assertEqual(lines[-1], "PRIVMSG #q :… dropped 5 lines")
+        self.assertIn("PRIVMSG #q :m%d" % (irc.QUEUE_LIMIT + 4), lines)
+        self.assertNotIn("PRIVMSG #q :m4", lines)
+
+
+if __name__ == "__main__":
+    unittest.main()

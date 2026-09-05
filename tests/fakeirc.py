@@ -103,4 +103,11 @@ class FakeIrcServer:
 
     def close(self):
         self.drop_all()
+        # shutdown() (not just close()) so a concurrent thread blocked in
+        # accept() on this socket wakes up immediately instead of possibly
+        # completing on a connection that races in after close().
+        try:
+            self.sock.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
         self.sock.close()
