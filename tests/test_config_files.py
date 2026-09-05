@@ -44,6 +44,20 @@ class TomlFallbackTests(unittest.TestCase):
         t = config.parse_toml_table('[agent-irc]\nx = "a\\"b\\\\c"\n', "agent-irc")
         self.assertEqual(t["x"], 'a"b\\c')
 
+    def test_bracket_inside_quoted_string(self):
+        t = config.parse_toml_table('[agent-irc]\nchannels = ["irc://h/#a]b", "irc://h/#c"]\n', "agent-irc")
+        self.assertEqual(t["channels"], ["irc://h/#a]b", "irc://h/#c"])
+
+    def test_comment_with_quotes_inside_array(self):
+        text = '[agent-irc]\nchannels = [\n  "irc://h/#a",  # not "this" one\n  "irc://h/#b",\n]\nlevel = "full"\n'
+        t = config.parse_toml_table(text, "agent-irc")
+        self.assertEqual(t["channels"], ["irc://h/#a", "irc://h/#b"])
+        self.assertEqual(t["level"], "full")
+
+    def test_unterminated_array_keeps_what_it_read(self):
+        t = config.parse_toml_table('[agent-irc]\nchannels = ["irc://h/#a"\n', "agent-irc")
+        self.assertEqual(t["channels"], ["irc://h/#a"])
+
 
 class ReaderTests(unittest.TestCase):
     def setUp(self):

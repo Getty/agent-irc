@@ -140,6 +140,29 @@ def _toml_unescape(m):
     return re.sub(r'\\(["\\nt])', lambda e: _ESCAPES[e.group(1)], raw)
 
 
+def _parse_array(body, start):
+    """Parse the string array opening at body[start] == '['; return (values, index after ']')."""
+    values = []
+    pos = start + 1
+    while pos < len(body):
+        ch = body[pos]
+        if ch == "]":
+            return values, pos + 1
+        if ch in "\"'":
+            m = _STRING_RE.match(body, pos)
+            if not m:
+                return values, len(body)
+            values.append(_toml_unescape(m))
+            pos = m.end()
+            continue
+        if ch == "#":
+            nl = body.find("\n", pos)
+            pos = len(body) if nl < 0 else nl
+            continue
+        pos += 1
+    return values, len(body)
+
+
 def parse_toml_table(text, table):
     """Minimal TOML: string and string-array values of one table. Fallback for Python < 3.11."""
     body = _toml_table_body(text, table)
@@ -151,11 +174,7 @@ def parse_toml_table(text, table):
             return result
         key, pos = m.group(1), m.end()
         if body.startswith("[", pos):
-            end = body.find("]", pos)
-            if end < 0:
-                return result
-            result[key] = [_toml_unescape(s) for s in _STRING_RE.finditer(body[pos + 1:end])]
-            pos = end + 1
+            result[key], pos = _parse_array(body, pos)
             continue
         sm = _STRING_RE.match(body, pos)
         if sm:
