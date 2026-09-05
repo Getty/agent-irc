@@ -53,7 +53,12 @@ class FakeIrcServer:
             context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
             context.load_cert_chain(TLS_CERT, TLS_KEY)
             try:
+                raw = conn
                 conn = context.wrap_socket(conn, server_side=True)
+                # wrap_socket detaches the raw socket; drop_all() must
+                # see the wrapped one or it cannot close this connection.
+                with self.lock:
+                    self.connections = [conn if c is raw else c for c in self.connections]
             except (ssl.SSLError, OSError):
                 try:
                     conn.close()

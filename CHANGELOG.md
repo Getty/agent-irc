@@ -22,5 +22,5 @@
   self-signed certificate, for both the insecure and certificate-verifying
   cases; a partial TLS record can no longer block the stop path for up to
   the full 30s registration timeout.
-- Add: `AGENT_IRC_DEBUG=1` logs every raw event and every transcript read
-  failure to stderr (spec §6.1, §9.3).
+- Add: `AGENT_IRC_DEBUG=1` logs every raw event, and any transcript read
+  that fails unexpectedly, to stderr (spec §6.1, §9.3).

@@ -40,6 +40,7 @@ class App:
         self.harness = "agent"
         self.level = None
         self.session = None
+        self.retired = set()
         self.connections = []
         self.stopped = False
         self.queue = queue.Queue()
@@ -77,16 +78,32 @@ class App:
         if self.debug:
             self.debug("agent-irc: event %s" % json.dumps(ev, sort_keys=True)[:2000])
         session_id = ev.get("session_id")
-        if self.session is not None and _usable_session_id(session_id) and str(session_id) != self.session.session_id:
-            # /clear or /resume hands the running server a new session_id
-            # (and transcript_path) without restarting it. Without this, the
-            # old Session would keep counting turns and tailing the old
-            # transcript forever. The config level was already loaded for
-            # this process and the connections are already open and joined,
-            # so neither is redone -- only the per-session state resets.
-            self.log("agent-irc: new session %s replaces %s" % (str(session_id)[:8], self.session.session_id[:8]))
-            cwd = str(ev.get("cwd") or self.session.cwd)
-            self.session = Session(self.harness, self.level, cwd, self.home, debug=self.debug)
+        current = self.session.session_id if self.session is not None else None
+        if current is not None and _usable_session_id(session_id) and str(session_id) != current:
+            kind = ev.get("event")
+            if str(session_id) in self.retired or kind == "SessionEnd":
+                # Async hooks keep no order: a trailing Stop or SessionEnd for
+                # a session this process already replaced, or a SessionEnd
+                # for an id it never ran, must neither resurrect the old
+                # session nor announce a new one -- that would be the phantom
+                # start+end pair the no-prior-state guard below exists to
+                # prevent.
+                self.log("agent-irc: %s for other session %s ignored" % (kind, str(session_id)[:8]))
+                return
+            if kind == "UserPromptSubmit":
+                # /clear or /resume hands the running server a new session_id
+                # (and transcript_path) without restarting it. Without this,
+                # the old Session would keep counting turns and tailing the
+                # old transcript forever. Only a prompt starts a session
+                # (spec 3); any other event with a foreign id -- a subagent's
+                # own tool call, say -- stays with the running session. The
+                # config level was already loaded for this process and the
+                # connections are already open and joined, so neither is
+                # redone -- only the per-session state resets.
+                self.log("agent-irc: new session %s replaces %s" % (str(session_id)[:8], current[:8]))
+                self.retired.add(current)
+                cwd = str(ev.get("cwd") or self.session.cwd)
+                self.session = Session(self.harness, self.level, cwd, self.home, debug=self.debug)
         if self.session is None:
             if not _usable_session_id(session_id):
                 return

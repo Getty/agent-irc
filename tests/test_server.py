@@ -152,6 +152,80 @@ class AppTests(unittest.TestCase):
         self.assertIn("▶ session s2 · claude · %s" % other_cwd, session_lines[1])
         self.assertTrue(any("new session s2" in l and "s1" in l for l in self.logs))
 
+    def test_late_events_for_a_replaced_session_do_not_resurrect_it(self):
+        # async hooks keep no order: a trailing Stop/SessionEnd for the old
+        # session may arrive after the new session's first prompt. Neither
+        # may announce the old session again or reset the new one.
+        t1 = os.path.join(self.tmp.name, "s1.jsonl")
+        t2 = os.path.join(self.tmp.name, "s2.jsonl")
+        app, _ = self.run_app([
+            rpc(1, "initialize", {"clientInfo": {"name": "claude-code"}}),
+            rpc(2, "tools/call", {"name": "event", "arguments": {"event": "UserPromptSubmit", "session_id": "s1",
+                                                                  "cwd": self.cwd, "transcript_path": t1,
+                                                                  "prompt": "one"}}),
+            rpc(3, "tools/call", {"name": "event", "arguments": {"event": "UserPromptSubmit", "session_id": "s2",
+                                                                  "cwd": self.cwd, "transcript_path": t2,
+                                                                  "prompt": "two"}}),
+            rpc(4, "tools/call", {"name": "event", "arguments": {"event": "Stop", "session_id": "s1",
+                                                                  "transcript_path": t1}}),
+            rpc(5, "tools/call", {"name": "event", "arguments": {"event": "SessionEnd", "session_id": "s1",
+                                                                  "reason": "clear"}}),
+            rpc(6, "tools/call", {"name": "event", "arguments": {"event": "SessionEnd", "session_id": "never-seen",
+                                                                  "reason": "other"}}),
+            rpc(7, "tools/call", {"name": "event", "arguments": {"event": "Stop", "session_id": "s2",
+                                                                  "transcript_path": t2}}),
+        ])
+        self.assertEqual(app.session.session_id, "s2")
+        self.assertEqual(app.session.turns, 1)
+        msgs = FakeConnection.instances[0].messages
+        self.assertEqual([m for m in msgs if m.startswith("▶ session")],
+                         [m for m in msgs if m.startswith("▶ session s1")] + [m for m in msgs if m.startswith("▶ session s2")])
+        self.assertEqual(len([m for m in msgs if m.startswith("▶ session")]), 2)
+        self.assertEqual([m for m in msgs if m.startswith("■")], [])
+        self.assertEqual(len([m for m in msgs if m.startswith("✔ turn")]), 1)
+        self.assertEqual(FakeConnection.instances[0].quit and "1 turns" in FakeConnection.instances[0].quit, True)
+
+    def test_foreign_id_tool_events_stay_with_the_running_session(self):
+        # Only a prompt starts a session; a tool event carrying an unknown
+        # id (a subagent with its own id, if a harness ever does that) is
+        # handled by the running session instead of replacing it.
+        t1 = os.path.join(self.tmp.name, "s1.jsonl")
+        app, _ = self.run_app([
+            rpc(1, "initialize", {"clientInfo": {"name": "claude-code"}}),
+            rpc(2, "tools/call", {"name": "event", "arguments": {"event": "UserPromptSubmit", "session_id": "s1",
+                                                                  "cwd": self.cwd, "transcript_path": t1,
+                                                                  "prompt": "one"}}),
+            rpc(3, "tools/call", {"name": "event", "arguments": {"event": "PreToolUse", "session_id": "sub-1",
+                                                                  "tool_name": "Bash", "tool_use_id": "t1",
+                                                                  "tool_input": {"command": "ls"}}}),
+            rpc(4, "tools/call", {"name": "event", "arguments": {"event": "PostToolUse", "session_id": "sub-1",
+                                                                  "tool_name": "Bash", "tool_use_id": "t1",
+                                                                  "tool_input": {"command": "ls"}}}),
+        ])
+        self.assertEqual(app.session.session_id, "s1")
+        msgs = FakeConnection.instances[0].messages
+        self.assertEqual(len([m for m in msgs if m.startswith("▶ session")]), 1)
+        self.assertTrue(any(m.startswith("⚙ Bash") for m in msgs), msgs)
+
+    def test_failed_connect_does_not_wedge_the_session(self):
+        # If opening the connections raises on the first event, the next
+        # event must still start the session (without connections) instead
+        # of tripping the rollover branch on a session that has no id yet.
+        def broken_factory(*a, **kw):
+            raise RuntimeError("can't start thread")
+        t1 = os.path.join(self.tmp.name, "s1.jsonl")
+        app, _ = self.run_app([
+            rpc(1, "initialize", {"clientInfo": {"name": "claude-code"}}),
+            rpc(2, "tools/call", {"name": "event", "arguments": {"event": "UserPromptSubmit", "session_id": "s1",
+                                                                  "cwd": self.cwd, "transcript_path": t1,
+                                                                  "prompt": "one"}}),
+            rpc(3, "tools/call", {"name": "event", "arguments": {"event": "Stop", "session_id": "s1",
+                                                                  "transcript_path": t1}}),
+        ], connection_factory=broken_factory)
+        self.assertEqual(app.session.session_id, "s1")
+        self.assertEqual(app.session.turns, 0)
+        self.assertFalse(any("NoneType" in l for l in self.logs), self.logs)
+
     def test_debug_logs_the_raw_event(self):
         debug = []
         self.run_app([

@@ -136,8 +136,8 @@ Tests use an in-process fake IRC server and never touch the network beyond
 `127.0.0.1`. See `CLAUDE.md` for the two-harness traps.
 
 **Debugging:** set `AGENT_IRC_DEBUG=1` in the environment the harness starts
-the server with to log every raw event and every transcript read failure;
-stderr lands in the harness's MCP log.
+the server with to log every raw event, and any transcript read that fails
+unexpectedly; stderr lands in the harness's MCP log.
 
 ## License
 

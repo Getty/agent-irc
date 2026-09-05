@@ -125,8 +125,10 @@ class ConnectionTests(unittest.TestCase):
         fake = FakeIrcServer(tls=True)
         self.addCleanup(fake.close)
         server = Server("ircs", "127.0.0.1", fake.port, "getty", None, False)
+        # A paced wait keeps the reconnect loop from hammering the fake
+        # server while the assertion below polls for the first failure.
         conn = IrcConnection(server, ["#a"], "agent-irc", "claude e873 ~/dev/agent-irc",
-                             self.logs.append, wait=lambda seconds: None, bucket=fast_bucket())
+                             self.logs.append, wait=lambda seconds: time.sleep(0.05), bucket=fast_bucket())
         conn.start()
         self.addCleanup(conn.close, "test over", 2.0)
         self.assertTrue(wait_until(lambda: any(
