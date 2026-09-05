@@ -14,9 +14,11 @@ the server's single tool `event`. Nothing else runs.
 
 ```
 .claude-plugin/plugin.json   Claude Code manifest
-.codex-plugin/plugin.json    Codex manifest — same .mcp.json and hooks.json
-.mcp.json                    the server: python3 ${CLAUDE_PLUGIN_ROOT}/bin/agent-irc
-hooks/hooks.json             one file, both harnesses; unknown events are ignored
+.codex-plugin/plugin.json    Codex manifest — its own .mcp.codex.json and hooks/codex.json
+.mcp.json                    Claude Code server: python3 ${CLAUDE_PLUGIN_ROOT}/bin/agent-irc
+.mcp.codex.json              Codex server: python3 -c bootstrap that globs $CODEX_HOME/plugins/cache/*/agent-irc/*/bin/agent-irc
+hooks/hooks.json             Claude Code hooks (loaded by convention, not named in the manifest)
+hooks/codex.json             the same hooks minus SessionEnd and the Claude-only events
 bin/agent-irc                entry point
 agent_irc/text.py            string helpers            agent_irc/irc.py     connection thread
 agent_irc/config.py          settings, trust, merge    agent_irc/mcp.py     JSON-RPC loop
@@ -78,22 +80,21 @@ real and pointless). `.claude-plugin/plugin.json` has no `hooks` key;
 **A harness can deliver `SessionEnd` to a brand-new, stateless process.**
 Claude Code (`-p` mode) tears down the original MCP connection (SIGINT then
 SIGTERM) right after the last turn, then reconnects a fresh server process
-solely to call `SessionEnd`. That process never saw any of the session's
-activity, so it must not announce a summary — `App._handle` recognizes a
+solely to call `SessionEnd`. A process whose first event is `SessionEnd` has
+no session to summarise — either it is that teardown reconnect, or a session
+that never received a prompt, and by design (spec §3) a session without a
+prompt never appears in IRC either way. `App._handle` recognizes a
 `SessionEnd` as literally the first event a fresh process sees and stays
-quiet instead of a false "0 turns · 0 tools" line.
+quiet instead of announcing anything.
 
-**Codex won't substitute `${CLAUDE_PLUGIN_ROOT}` (or `${PLUGIN_ROOT}`) in
-`.mcp.json`.** For a plugin registered via `"mcpServers": "./.mcp.json"`,
-Codex 0.153.4 passes the string through literally, resolves a relative arg
-against the *session's* cwd (not the plugin root), and exposes no
-environment variable a plugin could read instead. The bundled server
-therefore never starts under Codex; see spec §14 item 7 and the table below.
-
-**Codex refuses `mcp_tool` hooks on `SessionEnd`.** Independent of the above:
-`warning: skipping MCP tool hook ...: SessionEnd MCP hooks are not
-supported`. Even a working server would never receive it from Codex via this
-hook type.
+**Codex substitutes nothing in a plugin's `.mcp.json`.** `${CLAUDE_PLUGIN_ROOT}`
+and `${PLUGIN_ROOT}` arrive verbatim, the server starts in the session's cwd,
+and no environment variable names the install root. The only thing the plugin
+knows is its own name, so `.mcp.codex.json` runs an inline bootstrap that
+globs the newest `plugins/cache/*/agent-irc/*/bin/agent-irc` under
+`$CODEX_HOME` (default `~/.codex`). Codex also refuses `mcp_tool` hooks on
+`SessionEnd`; `hooks/codex.json` leaves it out, and the QUIT summary on stdin
+EOF is the session's end line there.
 
 ## Verified against real harnesses
 
@@ -111,5 +112,5 @@ produced the evidence (noted why).
 | `${CLAUDE_PLUGIN_ROOT}` substituted in `.mcp.json` args | yes, server starts and runs (2026-09-05) | no — confirmed broken; `${PLUGIN_ROOT}` and a `cwd`-based form also fail; no workaround found (2026-09-05) |
 | MCP server started at session start, shared by subagents | yes — one process served the main turn and its Explore subagent's own tool call (2026-09-05) | not observed (item 7) |
 | hook-triggered `tools/call` passes without approval | yes, no approval prompt across 5 runs, no config needed (2026-09-05) | not observed: blocked by item 7 before any approval gate is reached |
-| `SessionEnd` reaches the server before stdin closes | reaches a *fresh, stateless* process (see trap above); fixed to stay silent instead of a false summary (2026-09-05) | no — Codex rejects `mcp_tool` hooks on `SessionEnd` outright (2026-09-05) |
+| `SessionEnd` reaches the server before stdin closes | reaches a *fresh, stateless* process with no session to summarise (see trap above); fixed to stay quiet instead of announcing anything (2026-09-05) | no — Codex rejects `mcp_tool` hooks on `SessionEnd` outright (2026-09-05) |
 | `async: true` keeps delivery order | not always: `PostToolUse` for a parent Agent tool call was observed to arrive before `SubagentStart` for the very subagent it spawned; handled without crashing (2026-09-05) | not observed (item 7) |

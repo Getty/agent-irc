@@ -1,0 +1,9 @@
+{
+  "irc": {
+    "command": "python3",
+    "args": [
+      "-c",
+      "import glob, os, runpy, sys; home = os.environ.get('CODEX_HOME') or os.path.expanduser('~/.codex'); found = sorted(glob.glob(os.path.join(home, 'plugins', 'cache', '*', 'agent-irc', '*', 'bin', 'agent-irc')), key=os.path.getmtime); found or sys.exit('agent-irc: no installed copy under %s/plugins/cache' % home); sys.argv = [found[-1]]; runpy.run_path(found[-1], run_name='__main__')"
+    ]
+  }
+}

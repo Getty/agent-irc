@@ -1,0 +1,355 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "mcp_tool",
+            "server": "plugin:agent-irc:irc",
+            "tool": "event",
+            "async": true,
+            "timeout": 5,
+            "input": {
+              "event": "${hook_event_name}",
+              "session_id": "${session_id}",
+              "cwd": "${cwd}",
+              "transcript_path": "${transcript_path}",
+              "model": "${model}",
+              "turn_id": "${turn_id}",
+              "agent_id": "${agent_id}",
+              "agent_type": "${agent_type}",
+              "agent_transcript_path": "${agent_transcript_path}",
+              "tool_name": "${tool_name}",
+              "tool_use_id": "${tool_use_id}",
+              "tool_input": "${tool_input}",
+              "prompt": "${prompt}",
+              "last_assistant_message": "${last_assistant_message}",
+              "message": "${message}",
+              "notification_type": "${notification_type}",
+              "error_type": "${error_type}",
+              "error_message": "${error_message}",
+              "trigger": "${trigger}",
+              "reason": "${reason}",
+              "source": "${source}",
+              "from_model": "${from_model}",
+              "to_model": "${to_model}",
+              "duration": "${duration}"
+            }
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "mcp_tool",
+            "server": "plugin:agent-irc:irc",
+            "tool": "event",
+            "async": true,
+            "timeout": 5,
+            "input": {
+              "event": "${hook_event_name}",
+              "session_id": "${session_id}",
+              "cwd": "${cwd}",
+              "transcript_path": "${transcript_path}",
+              "model": "${model}",
+              "turn_id": "${turn_id}",
+              "agent_id": "${agent_id}",
+              "agent_type": "${agent_type}",
+              "agent_transcript_path": "${agent_transcript_path}",
+              "tool_name": "${tool_name}",
+              "tool_use_id": "${tool_use_id}",
+              "tool_input": "${tool_input}",
+              "prompt": "${prompt}",
+              "last_assistant_message": "${last_assistant_message}",
+              "message": "${message}",
+              "notification_type": "${notification_type}",
+              "error_type": "${error_type}",
+              "error_message": "${error_message}",
+              "trigger": "${trigger}",
+              "reason": "${reason}",
+              "source": "${source}",
+              "from_model": "${from_model}",
+              "to_model": "${to_model}",
+              "duration": "${duration}"
+            }
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "mcp_tool",
+            "server": "plugin:agent-irc:irc",
+            "tool": "event",
+            "async": true,
+            "timeout": 5,
+            "input": {
+              "event": "${hook_event_name}",
+              "session_id": "${session_id}",
+              "cwd": "${cwd}",
+              "transcript_path": "${transcript_path}",
+              "model": "${model}",
+              "turn_id": "${turn_id}",
+              "agent_id": "${agent_id}",
+              "agent_type": "${agent_type}",
+              "agent_transcript_path": "${agent_transcript_path}",
+              "tool_name": "${tool_name}",
+              "tool_use_id": "${tool_use_id}",
+              "tool_input": "${tool_input}",
+              "prompt": "${prompt}",
+              "last_assistant_message": "${last_assistant_message}",
+              "message": "${message}",
+              "notification_type": "${notification_type}",
+              "error_type": "${error_type}",
+              "error_message": "${error_message}",
+              "trigger": "${trigger}",
+              "reason": "${reason}",
+              "source": "${source}",
+              "from_model": "${from_model}",
+              "to_model": "${to_model}",
+              "duration": "${duration}"
+            }
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "mcp_tool",
+            "server": "plugin:agent-irc:irc",
+            "tool": "event",
+            "async": true,
+            "timeout": 5,
+            "input": {
+              "event": "${hook_event_name}",
+              "session_id": "${session_id}",
+              "cwd": "${cwd}",
+              "transcript_path": "${transcript_path}",
+              "model": "${model}",
+              "turn_id": "${turn_id}",
+              "agent_id": "${agent_id}",
+              "agent_type": "${agent_type}",
+              "agent_transcript_path": "${agent_transcript_path}",
+              "tool_name": "${tool_name}",
+              "tool_use_id": "${tool_use_id}",
+              "tool_input": "${tool_input}",
+              "prompt": "${prompt}",
+              "last_assistant_message": "${last_assistant_message}",
+              "message": "${message}",
+              "notification_type": "${notification_type}",
+              "error_type": "${error_type}",
+              "error_message": "${error_message}",
+              "trigger": "${trigger}",
+              "reason": "${reason}",
+              "source": "${source}",
+              "from_model": "${from_model}",
+              "to_model": "${to_model}",
+              "duration": "${duration}"
+            }
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "mcp_tool",
+            "server": "plugin:agent-irc:irc",
+            "tool": "event",
+            "async": true,
+            "timeout": 5,
+            "input": {
+              "event": "${hook_event_name}",
+              "session_id": "${session_id}",
+              "cwd": "${cwd}",
+              "transcript_path": "${transcript_path}",
+              "model": "${model}",
+              "turn_id": "${turn_id}",
+              "agent_id": "${agent_id}",
+              "agent_type": "${agent_type}",
+              "agent_transcript_path": "${agent_transcript_path}",
+              "tool_name": "${tool_name}",
+              "tool_use_id": "${tool_use_id}",
+              "tool_input": "${tool_input}",
+              "prompt": "${prompt}",
+              "last_assistant_message": "${last_assistant_message}",
+              "message": "${message}",
+              "notification_type": "${notification_type}",
+              "error_type": "${error_type}",
+              "error_message": "${error_message}",
+              "trigger": "${trigger}",
+              "reason": "${reason}",
+              "source": "${source}",
+              "from_model": "${from_model}",
+              "to_model": "${to_model}",
+              "duration": "${duration}"
+            }
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "mcp_tool",
+            "server": "plugin:agent-irc:irc",
+            "tool": "event",
+            "async": true,
+            "timeout": 5,
+            "input": {
+              "event": "${hook_event_name}",
+              "session_id": "${session_id}",
+              "cwd": "${cwd}",
+              "transcript_path": "${transcript_path}",
+              "model": "${model}",
+              "turn_id": "${turn_id}",
+              "agent_id": "${agent_id}",
+              "agent_type": "${agent_type}",
+              "agent_transcript_path": "${agent_transcript_path}",
+              "tool_name": "${tool_name}",
+              "tool_use_id": "${tool_use_id}",
+              "tool_input": "${tool_input}",
+              "prompt": "${prompt}",
+              "last_assistant_message": "${last_assistant_message}",
+              "message": "${message}",
+              "notification_type": "${notification_type}",
+              "error_type": "${error_type}",
+              "error_message": "${error_message}",
+              "trigger": "${trigger}",
+              "reason": "${reason}",
+              "source": "${source}",
+              "from_model": "${from_model}",
+              "to_model": "${to_model}",
+              "duration": "${duration}"
+            }
+          }
+        ]
+      }
+    ],
+    "Interrupt": [
+      {
+        "hooks": [
+          {
+            "type": "mcp_tool",
+            "server": "plugin:agent-irc:irc",
+            "tool": "event",
+            "async": true,
+            "timeout": 5,
+            "input": {
+              "event": "${hook_event_name}",
+              "session_id": "${session_id}",
+              "cwd": "${cwd}",
+              "transcript_path": "${transcript_path}",
+              "model": "${model}",
+              "turn_id": "${turn_id}",
+              "agent_id": "${agent_id}",
+              "agent_type": "${agent_type}",
+              "agent_transcript_path": "${agent_transcript_path}",
+              "tool_name": "${tool_name}",
+              "tool_use_id": "${tool_use_id}",
+              "tool_input": "${tool_input}",
+              "prompt": "${prompt}",
+              "last_assistant_message": "${last_assistant_message}",
+              "message": "${message}",
+              "notification_type": "${notification_type}",
+              "error_type": "${error_type}",
+              "error_message": "${error_message}",
+              "trigger": "${trigger}",
+              "reason": "${reason}",
+              "source": "${source}",
+              "from_model": "${from_model}",
+              "to_model": "${to_model}",
+              "duration": "${duration}"
+            }
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "mcp_tool",
+            "server": "plugin:agent-irc:irc",
+            "tool": "event",
+            "async": true,
+            "timeout": 5,
+            "input": {
+              "event": "${hook_event_name}",
+              "session_id": "${session_id}",
+              "cwd": "${cwd}",
+              "transcript_path": "${transcript_path}",
+              "model": "${model}",
+              "turn_id": "${turn_id}",
+              "agent_id": "${agent_id}",
+              "agent_type": "${agent_type}",
+              "agent_transcript_path": "${agent_transcript_path}",
+              "tool_name": "${tool_name}",
+              "tool_use_id": "${tool_use_id}",
+              "tool_input": "${tool_input}",
+              "prompt": "${prompt}",
+              "last_assistant_message": "${last_assistant_message}",
+              "message": "${message}",
+              "notification_type": "${notification_type}",
+              "error_type": "${error_type}",
+              "error_message": "${error_message}",
+              "trigger": "${trigger}",
+              "reason": "${reason}",
+              "source": "${source}",
+              "from_model": "${from_model}",
+              "to_model": "${to_model}",
+              "duration": "${duration}"
+            }
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "hooks": [
+          {
+            "type": "mcp_tool",
+            "server": "plugin:agent-irc:irc",
+            "tool": "event",
+            "async": true,
+            "timeout": 5,
+            "input": {
+              "event": "${hook_event_name}",
+              "session_id": "${session_id}",
+              "cwd": "${cwd}",
+              "transcript_path": "${transcript_path}",
+              "model": "${model}",
+              "turn_id": "${turn_id}",
+              "agent_id": "${agent_id}",
+              "agent_type": "${agent_type}",
+              "agent_transcript_path": "${agent_transcript_path}",
+              "tool_name": "${tool_name}",
+              "tool_use_id": "${tool_use_id}",
+              "tool_input": "${tool_input}",
+              "prompt": "${prompt}",
+              "last_assistant_message": "${last_assistant_message}",
+              "message": "${message}",
+              "notification_type": "${notification_type}",
+              "error_type": "${error_type}",
+              "error_message": "${error_message}",
+              "trigger": "${trigger}",
+              "reason": "${reason}",
+              "source": "${source}",
+              "from_model": "${from_model}",
+              "to_model": "${to_model}",
+              "duration": "${duration}"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

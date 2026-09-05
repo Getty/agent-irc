@@ -8,6 +8,6 @@
   },
   "homepage": "https://github.com/Getty/agent-irc",
   "license": "Artistic-2.0",
-  "mcpServers": "./.mcp.json",
-  "hooks": "./hooks/hooks.json"
+  "mcpServers": "./.mcp.codex.json",
+  "hooks": "./hooks/codex.json"
 }

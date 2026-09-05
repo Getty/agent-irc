@@ -39,8 +39,27 @@ class ManifestTests(unittest.TestCase):
     def test_codex_manifest(self):
         m = load(".codex-plugin/plugin.json")
         self.assertEqual(m["name"], "agent-irc")
-        self.assertEqual(m["mcpServers"], "./.mcp.json")
-        self.assertEqual(m["hooks"], "./hooks/hooks.json")
+        self.assertEqual(m["mcpServers"], "./.mcp.codex.json")
+        self.assertEqual(m["hooks"], "./hooks/codex.json")
+
+    def test_codex_mcp_json_is_a_self_locating_bootstrap(self):
+        m = load(".mcp.codex.json")
+        self.assertEqual(m["irc"]["command"], "python3")
+        self.assertEqual(m["irc"]["args"][0], "-c")
+        code = m["irc"]["args"][1]
+        self.assertIn("plugins", code)
+        self.assertIn("agent-irc", code)
+        self.assertIn("CODEX_HOME", code)
+        self.assertNotIn("${", code)
+
+    def test_codex_hooks_are_the_shared_hooks_minus_session_end_and_claude_only_events(self):
+        shared = load("hooks/hooks.json")["hooks"]
+        codex = load("hooks/codex.json")["hooks"]
+        codex_events = {"UserPromptSubmit", "PreToolUse", "PostToolUse", "SubagentStart", "SubagentStop",
+                        "Stop", "Interrupt", "PermissionRequest", "PostCompact"}
+        self.assertEqual(set(codex), codex_events)
+        for event in codex_events:
+            self.assertEqual(codex[event], shared[event], event)
 
     def test_versions_match(self):
         import agent_irc
