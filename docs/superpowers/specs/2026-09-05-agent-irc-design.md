@@ -140,7 +140,7 @@ level = "activity"
 | Key | Type | Meaning |
 |---|---|---|
 | `channels`, `<name>_channels` | list of URL strings | a named channel list; any key matching `^([a-z0-9]+_)?channels$` |
-| `level` | `"activity"` (default) or `"full"` | how much to send, see §8 |
+| `level` | `"activity"` (default), `"subactivity"` or `"full"` | how much to send, see §8; each level includes the ones before it |
 
 Anything else in the namespace is ignored.
 
@@ -385,7 +385,8 @@ characters:
 Paths under the home directory are shown with `~`.
 
 **Subagent-internal tool calls** (events that carry an `agent_id`) produce no
-tool lines at this level; their count and cost appear in the `⇠` line.
+tool lines at this level; their count and cost appear in the `⇠` line. See
+§8.2 for the level that shows them.
 
 **Subagent descriptions:** Claude's `SubagentStart` carries `agent_type` but
 not the `description` from the `Agent` tool input. The server keeps the
@@ -393,17 +394,31 @@ descriptions of pending `Agent` PreToolUse events in a FIFO and pairs them in
 order; parallel spawns are issued sequentially, so order matches in practice.
 No description on Codex.
 
-### 8.2 Level `full`
+### 8.2 Level `subactivity`
 
-Everything from `activity`, plus:
+Everything from `activity`, plus **subagent-internal tool lines**, in the same
+form as the main session's tool lines but prefixed with the subagent's short
+id (first four characters of `agent_id`):
+
+```
+⇢ subagent Explore: find hook payloads
+⚙ [a293] Grep 0.2s: hook_event_name
+⚙ [a293] Read 0.1s: hooks/hooks.json
+⇠ subagent Explore done · 42s · 18 tools · 31k in / 2k out · claude-sonnet-5
+```
+
+Failures inside a subagent are shown the same way with `✖ [a293] …`. Nested
+subagents carry their own id; the nesting is not drawn.
+
+### 8.3 Level `full`
+
+Everything from `subactivity`, plus:
 
 - the **full prompt** after the `»` line, split into `PRIVMSG` lines of at
   most 400 bytes at word boundaries, paragraph breaks preserved as line
   breaks, each line prefixed with `  `;
 - the **full final answer** (`last_assistant_message`) after the `✔` line,
-  same splitting, each line prefixed with `  `;
-- **subagent-internal tool lines**, prefixed with the subagent's short id:
-  `⚙ [a293] Read 0.1s: hooks/hooks.json`.
+  same splitting, each line prefixed with `  `.
 
 Tool outputs are never sent at any level.
 
@@ -487,7 +502,8 @@ one debug log line. Never an error to the harness.
   `tomllib` module like `briefing` does.
 - **events**: every row of §8 as a formatting test with a fixed clock;
   truncation, splitting at 400 bytes with multi-byte characters, path
-  shortening; subagent description FIFO.
+  shortening; subagent description FIFO; the same subagent tool event at all
+  three levels (hidden, shown with id, shown with id).
 - **usage**: fixture transcripts (anonymised excerpts of real Claude and Codex
   files) for the `requestId` dedupe, incremental offsets, turn selection by
   `turn_id`, subagent files.
