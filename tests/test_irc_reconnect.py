@@ -1,3 +1,5 @@
+import threading
+import time
 import unittest
 
 from agent_irc import irc
@@ -33,9 +35,37 @@ class ReconnectTests(unittest.TestCase):
         deadline = 200
         while len(self.delays) < 6 and deadline:
             deadline -= 1
-            import time
             time.sleep(0.02)
         self.assertEqual(self.delays[:6], [5, 10, 20, 40, 60, 60])
+
+    def test_lines_queued_while_disconnected_are_delivered_after_rejoin(self):
+        self.conn.close("unused", 2.0)
+        gate = threading.Event()
+        delays = []
+
+        def gated_wait(seconds):
+            delays.append(seconds)
+            gate.wait(10)
+
+        conn = IrcConnection(Server("irc", "127.0.0.1", self.fake.port, "u", None, False), ["#g"],
+                             "proj", "codex 01a ~/p", self.logs.append,
+                             wait=gated_wait, bucket=FloodBucket(burst=10000, interval=0.0001))
+        conn.start()
+        self.addCleanup(conn.close, "bye", 2.0)
+        self.addCleanup(gate.set)
+        self.assertTrue(self.fake.wait_for(lambda ls: "JOIN #g" in ls))
+        self.fake.drop_all()
+        deadline = time.time() + 5
+        while not delays and time.time() < deadline:
+            time.sleep(0.02)
+        self.assertEqual(delays, [5])            # the thread is in backoff: disconnected
+        conn.send_message("queued while down")
+        self.assertNotIn("PRIVMSG #g :queued while down", self.fake.lines())
+        gate.set()
+        self.assertTrue(self.fake.wait_for(lambda ls: ls.count("JOIN #g") == 2))
+        self.assertTrue(self.fake.wait_for(lambda ls: "PRIVMSG #g :queued while down" in ls))
+        lines = self.fake.lines()
+        self.assertLess(lines.index("JOIN #g", lines.index("JOIN #g") + 1), lines.index("PRIVMSG #g :queued while down"))
 
     def test_queue_cap_drops_oldest_and_notes_it(self):
         # Fill the queue before the thread starts, so the cap is hit deterministically.
