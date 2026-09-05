@@ -141,25 +141,40 @@ Because Codex runs one MCP server for the whole session regardless (see the
 table below), the main turn's own tool calls and IRC lines are unaffected —
 only subagent start/stop announcements are silently missing.
 
-**Codex may not give the MCP server time to send its own closing line either.**
-`SessionEnd` is refused outright (above), but the *fallback* — the server
-noticing stdin close and sending IRC `QUIT` from `App.shutdown()` — was also
-not observed live (2026-09-05, Task 19): across repeated `codex exec` runs,
-`RUST_LOG=debug` showed `RunningService dropped without explicit close()...
-closed asynchronously` for the MCP connection during Codex's own shutdown,
-and no `QUIT` ever reached the fake ircd, with the server process already
-gone by the time it was checked. Whether Codex kills the child before the
-async drop completes, or drops the pipe in a way our `for raw in stdin` loop
-never sees as EOF, wasn't diagnosed further. Practically: a Codex session
-today ends with no closing IRC line at all, not even the `QUIT` summary.
+**Harnesses end the server by signal, not by EOF.** Task 19 assumed Codex's
+missing closing line meant it drops the pipe without the `for raw in stdin`
+loop ever observing an EOF; live re-verification (2026-09-05, Task 20) with
+`RUST_LOG=debug` found the real mechanism instead: `MCP server stderr
+(python3): agent-irc: signal 15, shutting down` — Codex just sends the
+server a plain `SIGTERM` at session end, exactly like Claude Code. Neither
+harness closes stdin. Claude Code sends `SIGINT` and, roughly 100ms later if
+the process hasn't exited, escalates to `SIGTERM` (Task 18); that gap is
+tight enough that, once the first signal is caught and `shutdown()` is
+running, a second signal arriving mid-`join()` can unwind `shutdown()` via a
+fresh exception before the connection thread `begin_close()` only *asked* to
+send `QUIT` has actually written it — reproduced locally by sending SIGINT
+then SIGTERM 0.1s apart against a real subprocess (failed 3/3 runs). Fix,
+both live-verified 2026-09-05: `install_signal_handlers` in
+`agent_irc/server.py` turns `SIGTERM`/`SIGINT`/`SIGHUP` into a `SystemExit`
+raised in the main thread, so `mcp.serve`'s blocking stdin read unwinds
+through `App.run()`'s `finally` into `shutdown()` regardless of which signal
+arrived; and only the *first* signal raises — a later one just logs, so it
+can't cut a `shutdown()` already in progress short before the `QUIT` is
+written. `shutdown()` itself also gained an idempotency guard (`self.stopped`)
+for the case where it might otherwise run twice. Covered by
+`tests/test_end_to_end.py`'s `test_sigterm_sends_quit`, `test_sigint_sends_quit`
+and `test_sigint_then_sigterm_still_sends_quit`, and
+`tests/test_server.py::AppTests::test_shutdown_is_idempotent`.
 
 ## Verified against real harnesses
 
 Filled in by the live verification (plan Task 18), 2026-09-05, against
 `claude` 2.1.261 and `codex` 0.153.4; the Codex column was re-verified
 2026-09-05 (Task 19) after the self-locating bootstrap and the hook fixes
-below. Each item records the observed behaviour and the date; "not observed"
-means the prerequisite step never produced the evidence (noted why).
+below, and the `SessionEnd` row for both columns was re-verified again
+2026-09-05 (Task 20) after adding signal handling. Each item records the
+observed behaviour and the date; "not observed" means the prerequisite step
+never produced the evidence (noted why).
 
 | Item | Claude Code | Codex |
 |---|---|---|
@@ -170,5 +185,5 @@ means the prerequisite step never produced the evidence (noted why).
 | `${CLAUDE_PLUGIN_ROOT}` substituted in `.mcp.json` args | yes, server starts and runs (2026-09-05) | n/a — Codex never substitutes it; `.mcp.codex.json`'s self-locating bootstrap works instead, confirmed live: server starts, `tools/list` succeeds, and real `tools/call` traffic for `UserPromptSubmit`/`PreToolUse`/`PostToolUse`/`Stop` reaches IRC (2026-09-05) |
 | MCP server started at session start, shared by subagents | yes — one process served the main turn and its Explore subagent's own tool call (2026-09-05) | yes — one `irc` MCP connection for the whole session served the main turn's `Bash` call and the spawned sub-agent's own `wait_agent`/tool calls alike (2026-09-05) |
 | hook-triggered `tools/call` passes without approval | yes, no approval prompt across 5 runs, no config needed (2026-09-05) | yes, no approval prompt across every `codex exec --dangerously-bypass-hook-trust` run once the server-name and field-whitelist fixes were in place (2026-09-05) |
-| `SessionEnd` reaches the server before stdin closes | reaches a *fresh, stateless* process with no session to summarise (see trap above); fixed to stay quiet instead of announcing anything (2026-09-05) | no — Codex rejects `mcp_tool` hooks on `SessionEnd` outright, and the stdin-EOF fallback wasn't observed to fire either: no `QUIT` reached the fake ircd in repeated runs, with the server process already gone by the time it was checked (2026-09-05, see trap above) |
+| `SessionEnd` reaches the server before stdin closes | no — never delivered to a live process: either a *fresh, stateless* reconnect that stays quiet (see trap above), or the original process ended by signal before any `SessionEnd` hook could fire; the harness kills the server with `SIGINT` then `SIGTERM` instead, and `install_signal_handlers` still sends the `QUIT` summary from there — confirmed live, real numbers, 4/4 runs (2026-09-05, Task 20, see trap above) | no — Codex rejects `mcp_tool` hooks on `SessionEnd` outright; the harness ends the server with a plain `SIGTERM` instead (not a dropped pipe, as Task 19 assumed), and `install_signal_handlers` sends the `QUIT` summary from there — confirmed live, real numbers, 3/3 runs (2026-09-05, Task 20, see trap above) |
 | `async: true` keeps delivery order | not always: `PostToolUse` for a parent Agent tool call was observed to arrive before `SubagentStart` for the very subagent it spawned; handled without crashing (2026-09-05) | not observed the same way: `SubagentStart`/`SubagentStop` `mcp_tool` hooks never fired at all in any configuration tried, so there was nothing to compare ordering against (2026-09-05, see trap above) |
