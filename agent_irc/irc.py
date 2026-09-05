@@ -1,6 +1,7 @@
 """IRC connection thread: register, keep alive, deliver lines (spec §7)."""
 
 import collections
+import re
 import select
 import socket
 import ssl
@@ -15,6 +16,8 @@ BACKOFF = (5, 10, 20, 40, 60)
 REGISTRATION_TIMEOUT = 30.0
 NICK_LIMITS = (30, 9)
 MAX_NICK_TRIES = 99
+
+_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f]")  # besides \r/\n, stripped from every line body before send
 
 
 class GiveUp(Exception):
@@ -140,7 +143,14 @@ class IrcConnection(threading.Thread):
                 context.check_hostname = False
                 context.verify_mode = ssl.CERT_NONE
             sock = context.wrap_socket(sock, server_hostname=self.server.host)
-        sock.settimeout(REGISTRATION_TIMEOUT)
+            # A partial TLS record can leave select() reporting the socket
+            # readable while recv() still blocks waiting for the rest of
+            # it. REGISTRATION_TIMEOUT (30s) on that recv would block the
+            # stop path for up to 30s; 2s is enough for any real peer and
+            # keeps _read()'s per-call timeout error bounded.
+            sock.settimeout(2.0)
+        else:
+            sock.settimeout(REGISTRATION_TIMEOUT)
         self.sock = sock
         self.buffer = b""
         self.registered = False
@@ -236,7 +246,7 @@ class IrcConnection(threading.Thread):
                 return
         try:
             data = sock.recv(4096)
-        except ssl.SSLWantReadError:
+        except (ssl.SSLWantReadError, socket.timeout):
             return
         if not data:
             raise ConnectionError("connection closed by server")
@@ -272,7 +282,9 @@ class IrcConnection(threading.Thread):
             raise ConnectionError(line)
 
     def _raw(self, line):
-        data = line.replace("\r", " ").replace("\n", " ").encode("utf-8") + b"\r\n"
+        line = line.replace("\r", " ").replace("\n", " ")
+        line = _CONTROL_RE.sub("", line)
+        data = line.encode("utf-8") + b"\r\n"
         self.sock.sendall(data)
 
     def _close_socket(self):

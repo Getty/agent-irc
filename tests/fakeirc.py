@@ -1,16 +1,23 @@
 """A minimal fake IRC server for tests: scripted registration, records every line."""
 
+import os
 import socket
+import ssl
 import threading
 import time
 
+FIXTURES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures")
+TLS_CERT = os.path.join(FIXTURES, "test-cert.pem")
+TLS_KEY = os.path.join(FIXTURES, "test-key.pem")
+
 
 class FakeIrcServer:
-    def __init__(self, taken_nicks=(), password=None, max_nick=None, welcome_delay=0.0):
+    def __init__(self, taken_nicks=(), password=None, max_nick=None, welcome_delay=0.0, tls=False):
         self.taken = set(taken_nicks)
         self.password = password
         self.max_nick = max_nick
         self.welcome_delay = welcome_delay
+        self.tls = tls
         self.received = []
         self.connections = []
         self.lock = threading.Lock()
@@ -38,6 +45,21 @@ class FakeIrcServer:
             pass
 
     def _serve(self, conn):
+        if self.tls:
+            # The handshake happens here, in the per-connection thread, so a
+            # client that fails or refuses it (e.g. certificate verification
+            # off the client's default trust store) only aborts this one
+            # connection instead of the accept loop.
+            context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            context.load_cert_chain(TLS_CERT, TLS_KEY)
+            try:
+                conn = context.wrap_socket(conn, server_side=True)
+            except (ssl.SSLError, OSError):
+                try:
+                    conn.close()
+                except OSError:
+                    pass
+                return
         nick = user = passed = None
         welcomed = False
         try:
