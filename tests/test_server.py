@@ -1,12 +1,13 @@
 import io
 import json
 import os
+import signal
 import tempfile
 import threading
 import time
 import unittest
 
-from agent_irc.server import App, detect_harness
+from agent_irc.server import App, detect_harness, install_signal_handlers
 
 A = "irc://u:p@a.example/"
 
@@ -63,10 +64,11 @@ class AppTests(unittest.TestCase):
             json.dump({"agent-irc": {"channels": [A + "#agents", A + "#log"], "level": "activity"}}, f)
         self.logs = []
 
-    def run_app(self, lines, connection_factory=FakeConnection):
+    def run_app(self, lines, connection_factory=FakeConnection, debug=None):
         stdin = io.StringIO("".join(lines))
         stdout = io.StringIO()
-        app = App(self.home, {"USER": "getty"}, stdin, stdout, self.logs.append, connection_factory=connection_factory)
+        app = App(self.home, {"USER": "getty"}, stdin, stdout, self.logs.append,
+                  connection_factory=connection_factory, debug=debug)
         app.run()
         return app, stdout.getvalue()
 
@@ -120,6 +122,44 @@ class AppTests(unittest.TestCase):
         self.assertIsNone(app.session)
         self.assertEqual(FakeConnection.instances, [])
         self.assertTrue(any("SessionEnd with no prior state" in l for l in self.logs))
+
+    def test_new_session_id_replaces_the_running_session(self):
+        # /clear or /resume hand the running MCP server a new session_id
+        # (and transcript_path) without restarting it. The old Session must
+        # not keep counting turns for a session that no longer exists.
+        other_cwd = os.path.join(self.tmp.name, "other-project")
+        os.makedirs(other_cwd)
+        t1 = os.path.join(self.tmp.name, "s1.jsonl")
+        t2 = os.path.join(self.tmp.name, "s2.jsonl")
+        app, _ = self.run_app([
+            rpc(1, "initialize", {"clientInfo": {"name": "claude-code"}}),
+            rpc(2, "tools/call", {"name": "event", "arguments": {"event": "UserPromptSubmit", "session_id": "s1",
+                                                                  "cwd": self.cwd, "transcript_path": t1,
+                                                                  "prompt": "first"}}),
+            rpc(3, "tools/call", {"name": "event", "arguments": {"event": "SessionEnd", "session_id": "s1",
+                                                                  "reason": "clear"}}),
+            rpc(4, "tools/call", {"name": "event", "arguments": {"event": "UserPromptSubmit", "session_id": "s2",
+                                                                  "cwd": other_cwd, "transcript_path": t2,
+                                                                  "prompt": "second"}}),
+        ])
+        self.assertEqual(app.session.session_id, "s2")
+        self.assertEqual(app.session.turns, 1)
+        # The connections opened for s1 are kept, not reopened, for s2.
+        self.assertEqual(len(FakeConnection.instances), 1)
+        conn = FakeConnection.instances[0]
+        session_lines = [m for m in conn.messages if m.startswith("▶ session")]
+        self.assertEqual(len(session_lines), 2)
+        self.assertIn("▶ session s2 · claude · %s" % other_cwd, session_lines[1])
+        self.assertTrue(any("new session s2" in l and "s1" in l for l in self.logs))
+
+    def test_debug_logs_the_raw_event(self):
+        debug = []
+        self.run_app([
+            rpc(1, "initialize", {"clientInfo": {"name": "claude-code"}}),
+            rpc(2, "tools/call", {"name": "event", "arguments": {"event": "UserPromptSubmit", "session_id": "s",
+                                                                  "cwd": self.cwd, "prompt": "x"}}),
+        ], debug=debug.append)
+        self.assertTrue(any("agent-irc: event" in l and '"event": "UserPromptSubmit"' in l for l in debug))
 
     def test_events_before_session_id_are_ignored(self):
         app, _ = self.run_app([
@@ -181,6 +221,36 @@ class AppTests(unittest.TestCase):
         app.shutdown()
         app.shutdown()
         self.assertEqual([c.begin_close_calls for c in FakeConnection.instances], [1])
+
+
+class SignalHandlerTests(unittest.TestCase):
+    def test_signal_is_ignored_once_the_app_is_already_stopped(self):
+        # An EOF-triggered shutdown() sets App.stopped immediately, before
+        # it finishes sending the QUIT (see server.py's App.shutdown). A
+        # signal landing after that point must not raise SystemExit and
+        # unwind the shutdown already in progress -- even though this
+        # would be the *first* signal this handler has seen.
+        logs = []
+        original = signal.getsignal(signal.SIGTERM)
+        try:
+            install_signal_handlers(logs.append, is_stopped=lambda: True)
+            handler = signal.getsignal(signal.SIGTERM)
+            handler(signal.SIGTERM, None)  # must not raise
+        finally:
+            signal.signal(signal.SIGTERM, original)
+        self.assertTrue(any("already shutting down" in l for l in logs))
+
+    def test_signal_raises_when_the_app_is_not_stopped(self):
+        logs = []
+        original = signal.getsignal(signal.SIGTERM)
+        try:
+            install_signal_handlers(logs.append, is_stopped=lambda: False)
+            handler = signal.getsignal(signal.SIGTERM)
+            with self.assertRaises(SystemExit):
+                handler(signal.SIGTERM, None)
+        finally:
+            signal.signal(signal.SIGTERM, original)
+        self.assertTrue(any("shutting down" in l for l in logs))
 
 
 if __name__ == "__main__":

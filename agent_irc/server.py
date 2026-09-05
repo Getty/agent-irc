@@ -1,5 +1,6 @@
 """Wire the MCP loop, the dispatcher thread, configuration, session and IRC connections (spec §3, §6)."""
 
+import json
 import os
 import queue
 import signal
@@ -28,14 +29,16 @@ def _usable_session_id(value):
 
 
 class App:
-    def __init__(self, home, env, stdin, stdout, log, connection_factory=IrcConnection):
+    def __init__(self, home, env, stdin, stdout, log, connection_factory=IrcConnection, debug=None):
         self.home = home
         self.env = env
         self.stdin = stdin
         self.stdout = stdout
         self.log = log
+        self.debug = debug
         self.connection_factory = connection_factory
         self.harness = "agent"
+        self.level = None
         self.session = None
         self.connections = []
         self.stopped = False
@@ -71,8 +74,21 @@ class App:
                 self.log("agent-irc: event dropped: %r" % e)
 
     def _handle(self, ev):
+        if self.debug:
+            self.debug("agent-irc: event %s" % json.dumps(ev, sort_keys=True)[:2000])
+        session_id = ev.get("session_id")
+        if self.session is not None and _usable_session_id(session_id) and str(session_id) != self.session.session_id:
+            # /clear or /resume hands the running server a new session_id
+            # (and transcript_path) without restarting it. Without this, the
+            # old Session would keep counting turns and tailing the old
+            # transcript forever. The config level was already loaded for
+            # this process and the connections are already open and joined,
+            # so neither is redone -- only the per-session state resets.
+            self.log("agent-irc: new session %s replaces %s" % (str(session_id)[:8], self.session.session_id[:8]))
+            cwd = str(ev.get("cwd") or self.session.cwd)
+            self.session = Session(self.harness, self.level, cwd, self.home, debug=self.debug)
         if self.session is None:
-            if not _usable_session_id(ev.get("session_id")):
+            if not _usable_session_id(session_id):
                 return
             if ev.get("event") == "SessionEnd":
                 # A harness may start a fresh server process to deliver
@@ -86,7 +102,8 @@ class App:
                 return
             cwd = str(ev.get("cwd") or os.getcwd())
             config = load_config(self.harness, cwd, self.home, self.env, self.log)
-            self.session = Session(self.harness, config.level, cwd, self.home)
+            self.level = config.level
+            self.session = Session(self.harness, self.level, cwd, self.home, debug=self.debug)
             self._connect(config, cwd, str(ev["session_id"]))
         for line in self.session.handle(ev):
             for connection in self.connections:
@@ -124,7 +141,7 @@ class App:
             connection.join(max(0.0, deadline - time.monotonic()))
 
 
-def install_signal_handlers(log):
+def install_signal_handlers(log, is_stopped=None):
     """Turn SIGTERM/SIGINT/SIGHUP into SystemExit in the main thread, so run()'s finally sends the QUIT.
 
     Only the first signal raises. begin_close() only asks the connection
@@ -135,12 +152,19 @@ def install_signal_handlers(log):
     shutdown() is still blocked inside one of those join()s, unwinding it
     before the QUIT is ever written. A later signal is logged and otherwise
     ignored; shutdown()'s own 2s budgets already bound the wait.
+
+    is_stopped, when given, is polled too: an EOF-triggered shutdown() (no
+    signal involved at all) sets App.stopped immediately, before it has
+    finished sending the QUIT. Without this check, the first signal to
+    arrive afterwards would still see this handler's own `stopping` as
+    False and raise SystemExit, unwinding that already-in-progress
+    shutdown() from underneath it the same way a second signal could.
     """
     stopping = False
 
     def stop(signum, frame):
         nonlocal stopping
-        if stopping:
+        if stopping or (is_stopped is not None and is_stopped()):
             log("agent-irc: signal %d, already shutting down" % signum)
             return
         stopping = True
@@ -162,5 +186,7 @@ def main():
         sys.stderr.write(message + "\n")
         sys.stderr.flush()
 
-    install_signal_handlers(log)
-    App(os.path.expanduser("~"), dict(os.environ), sys.stdin, sys.stdout, log).run()
+    debug = log if os.environ.get("AGENT_IRC_DEBUG") == "1" else None
+    app = App(os.path.expanduser("~"), dict(os.environ), sys.stdin, sys.stdout, log, debug=debug)
+    install_signal_handlers(log, lambda: app.stopped)
+    app.run()

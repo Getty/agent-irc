@@ -2,6 +2,7 @@ import json
 import os
 import tempfile
 import unittest
+from unittest import mock
 
 from agent_irc.events import Session
 
@@ -108,6 +109,23 @@ class SessionCoreTests(unittest.TestCase):
         self.assertEqual(self.s.total.output, 6000)
         self.assertEqual(self.s.total_tools, 1)
 
+    def test_stop_logs_transcript_failure_when_debug_is_set(self):
+        # A transcript_path that is a directory (e.g. an unreadable path)
+        # never actually reaches this handler in practice: usage.py's
+        # _Tail.records() already catches OSError, including
+        # IsADirectoryError, and returns [] -- confirmed by pointing a real
+        # Session at a directory and observing zero debug output. Mocking
+        # the read itself is what actually exercises the debug call the
+        # three `except Exception` fallbacks in _start/_turn_usage/
+        # _subagent_usage gained.
+        debug = []
+        s = Session("claude", "activity", CWD, HOME, clock=self.clock, debug=debug.append)
+        s.handle(self.base(event="UserPromptSubmit", prompt="go"))
+        with mock.patch.object(s.transcript, "read_new", side_effect=OSError(21, "Is a directory")):
+            lines = s.handle(self.base(event="Stop"))
+        self.assertEqual(lines, ["✔ turn · 0.0s · 0 tools"])
+        self.assertTrue(any("agent-irc: transcript read failed" in l for l in debug))
+
     def test_stop_without_transcript(self):
         s = Session("claude", "activity", CWD, HOME, clock=self.clock)
         s.handle({"event": "UserPromptSubmit", "session_id": "abc", "cwd": CWD, "prompt": "go"})
@@ -130,6 +148,27 @@ class SessionCoreTests(unittest.TestCase):
         self.assertEqual(lines[1:], ["» first line", "  first line", "  second paragraph"])
         lines = s.handle(self.base(event="Stop", last_assistant_message="All done.\nBye."))
         self.assertEqual(lines[1:], ["  All done.", "  Bye."])
+
+    def test_full_level_lines_fit_within_max_payload(self):
+        # A 400-byte ASCII paragraph, prefixed with "  ", must never exceed
+        # MAX_PAYLOAD (400 bytes) once sent -- splitting at MAX_PAYLOAD
+        # itself (the pre-fix bug) leaves no room for the two-byte prefix,
+        # so cut_bytes() on send silently drops the line's last two bytes.
+        from agent_irc.irc import MAX_PAYLOAD
+        s = Session("claude", "full", CWD, HOME, clock=self.clock)
+        paragraph = "x" * 400
+        # lines[0] is the session-start line, lines[1] the "» " prompt
+        # summary; the split body -- what this test is about -- follows.
+        lines = s.handle(self.base(event="UserPromptSubmit", prompt=paragraph))
+        self.assertEqual(lines[2:], ["  " + "x" * 398, "  " + "x" * 2])
+        for line in lines[1:]:
+            self.assertLessEqual(len(line.encode("utf-8")), MAX_PAYLOAD)
+
+        # lines[0] is the turn summary; the rest is the split body.
+        lines = s.handle(self.base(event="Stop", last_assistant_message=paragraph))
+        self.assertEqual(lines[1:], ["  " + "x" * 398, "  " + "x" * 2])
+        for line in lines:
+            self.assertLessEqual(len(line.encode("utf-8")), MAX_PAYLOAD)
 
     def test_subactivity_does_not_send_texts(self):
         s = Session("claude", "subactivity", CWD, HOME, clock=self.clock)

@@ -5,6 +5,7 @@ import json
 import re
 import time
 
+from agent_irc.irc import MAX_PAYLOAD
 from agent_irc.text import first_line, fmt_duration, short_path, split_message, truncate
 from agent_irc.usage import ClaudeTranscript, CodexTranscript, Usage, claude_subagent_path
 
@@ -16,6 +17,11 @@ G = {
 
 SUMMARY_LIMIT = 120
 PROMPT_LIMIT = 200
+# Full-level body lines get a two-space prefix ("  " + line) before they are
+# sent; splitting at the full MAX_PAYLOAD would let a line reach exactly 400
+# bytes on its own, which becomes 402 with the prefix and loses its last two
+# bytes to cut_bytes() on send (spec §8.3).
+FULL_LINE_BYTES = MAX_PAYLOAD - 2
 
 _PLACEHOLDER_RE = re.compile(r"^\$\{[^}]*\}$")
 _SHELL_TOOLS = {"bash", "shell", "shell_command", "exec_command", "local_shell", "unified_exec"}
@@ -95,12 +101,13 @@ def _snake(name):
 class Session:
     """State for one harness session: turns, tools, subagents, totals."""
 
-    def __init__(self, harness, level, cwd, home, clock=time.time):
+    def __init__(self, harness, level, cwd, home, clock=time.time, debug=None):
         self.harness = harness
         self.level = level
         self.cwd = cwd
         self.home = home
         self.clock = clock
+        self.debug = debug
         self.session_id = None
         self.model = None
         self.started = None
@@ -144,8 +151,9 @@ class Session:
                           else self.transcript.read_new())
                 if primed.model:
                     self.model = primed.model
-            except Exception:
-                pass
+            except Exception as e:
+                if self.debug:
+                    self.debug("agent-irc: transcript read failed: %r" % e)
         if ev.get("model"):
             self.model = ev["model"]
         who = " ".join(x for x in (self.harness, self.model) if x)
@@ -161,7 +169,7 @@ class Session:
         prompt = str(ev.get("prompt") or "")
         lines = [G["prompt"] + " " + truncate(first_line(prompt), PROMPT_LIMIT)]
         if self.level == "full":
-            lines.extend("  " + line for line in split_message(prompt))
+            lines.extend("  " + line for line in split_message(prompt, FULL_LINE_BYTES))
         return lines
 
     def _turn_usage(self, ev):
@@ -173,7 +181,9 @@ class Session:
             if self.harness == "codex":
                 return self.transcript.read_turn(ev.get("turn_id"))
             return self.transcript.read_new()
-        except Exception:
+        except Exception as e:
+            if self.debug:
+                self.debug("agent-irc: transcript read failed: %r" % e)
             return Usage()
 
     def _on_stop(self, ev):
@@ -193,7 +203,7 @@ class Session:
             parts.append(self.model)
         lines = [" · ".join(parts)]
         if self.level == "full" and ev.get("last_assistant_message"):
-            lines.extend("  " + line for line in split_message(str(ev["last_assistant_message"])))
+            lines.extend("  " + line for line in split_message(str(ev["last_assistant_message"]), FULL_LINE_BYTES))
         self.turn_started = None
         return lines
 
@@ -268,8 +278,9 @@ class Session:
             if main and self.session_id and ev.get("agent_id"):
                 return ClaudeTranscript.read_whole(
                     claude_subagent_path(main, self.session_id, str(ev["agent_id"])))
-        except Exception:
-            pass
+        except Exception as e:
+            if self.debug:
+                self.debug("agent-irc: transcript read failed: %r" % e)
         return Usage()
 
     def _on_subagent_stop(self, ev):
