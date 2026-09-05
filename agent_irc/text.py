@@ -80,28 +80,28 @@ def short_path(path, cwd, home):
 
 def fmt_duration(seconds):
     seconds = max(float(seconds or 0), 0.0)
-    if seconds < 10:
+    if seconds < 9.95:
         return "%.1fs" % seconds
-    if seconds < 60:
-        return "%ds" % round(seconds)
-    if seconds < 3600:
-        m, s = divmod(int(round(seconds)), 60)
-        return "%dm%02ds" % (m, s)
-    h, rest = divmod(int(round(seconds)), 3600)
-    return "%dh%02dm" % (h, rest // 60)
+    total = int(round(seconds))
+    if total < 60:
+        return "%ds" % total
+    if total < 3600:
+        return "%dm%02ds" % divmod(total, 60)
+    hours, rest = divmod(total, 3600)
+    return "%dh%02dm" % (hours, rest // 60)
 
 
 def fmt_tokens(n):
     n = int(n or 0)
     if n < 1000:
         return str(n)
-    if n < 1000000:
-        return "%dk" % round(n / 1000.0)
-    m = n / 1000000.0
-    s = "%.1f" % m
-    if s.endswith(".0"):
-        s = s[:-2]
-    return s + "M"
+    thousands = int(round(n / 1000.0))
+    if thousands < 1000:
+        return "%dk" % thousands
+    text = "%.1f" % (n / 1000000.0)
+    if text.endswith(".0"):
+        text = text[:-2]
+    return text + "M"
 
 
 def nick_base(cwd):

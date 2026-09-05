@@ -46,6 +46,10 @@ class TextTests(unittest.TestCase):
         self.assertEqual(text.fmt_duration(42.6), "43s")
         self.assertEqual(text.fmt_duration(192), "3m12s")
         self.assertEqual(text.fmt_duration(4320), "1h12m")
+        self.assertEqual(text.fmt_duration(9.96), "10s")
+        self.assertEqual(text.fmt_duration(59.6), "1m00s")
+        self.assertEqual(text.fmt_duration(3599.4), "59m59s")
+        self.assertEqual(text.fmt_duration(3599.6), "1h00m")
 
     def test_fmt_tokens(self):
         self.assertEqual(text.fmt_tokens(0), "0")
@@ -55,6 +59,9 @@ class TextTests(unittest.TestCase):
         self.assertEqual(text.fmt_tokens(210400), "210k")
         self.assertEqual(text.fmt_tokens(1200000), "1.2M")
         self.assertEqual(text.fmt_tokens(2000000), "2M")
+        self.assertEqual(text.fmt_tokens(999499), "999k")
+        self.assertEqual(text.fmt_tokens(999500), "1M")
+        self.assertEqual(text.fmt_tokens(999999), "1M")
 
     def test_nick_base(self):
         self.assertEqual(text.nick_base("/home/g/dev/agent-irc"), "agent-irc")
