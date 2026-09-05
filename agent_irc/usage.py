@@ -137,3 +137,45 @@ class ClaudeTranscript(_Tail):
 def claude_subagent_path(transcript_path, session_id, agent_id):
     return os.path.join(os.path.dirname(transcript_path), session_id, "subagents",
                         "agent-%s.jsonl" % agent_id)
+
+
+_CODEX_TOOL_ITEMS = ("function_call", "custom_tool_call")
+
+
+def _codex_scan(records, turn_id, key):
+    """Return (usage, last matching token dict) over records; key is turn_token_usage or thread_token_usage."""
+    usage = Usage()
+    last = None
+    for r in records:
+        if not isinstance(r, dict):
+            continue
+        p = r.get("payload")
+        if not isinstance(p, dict):
+            continue
+        kind = r.get("type")
+        if kind == "token_usage_record":
+            if turn_id is None or p.get("turn_id") == turn_id:
+                t = p.get(key)
+                if isinstance(t, dict):
+                    last = t
+        elif kind == "response_item" and p.get("type") in _CODEX_TOOL_ITEMS:
+            usage.tools += 1
+        elif kind == "turn_context" and p.get("model"):
+            usage.model = p["model"]
+    if last:
+        usage.input = _int(last.get("input_tokens"))
+        usage.cached = _int(last.get("cached_input_tokens"))
+        usage.output = _int(last.get("output_tokens"))
+    return usage
+
+
+class CodexTranscript(_Tail):
+    def read_turn(self, turn_id):
+        return _codex_scan(self.records(), turn_id, "turn_token_usage")
+
+    @classmethod
+    def read_whole(cls, path):
+        records = cls(path).records()
+        usage = _codex_scan(records, None, "thread_token_usage")
+        usage.duration = _span(records)
+        return usage
