@@ -143,7 +143,7 @@ _CODEX_TOOL_ITEMS = ("function_call", "custom_tool_call")
 
 
 def _codex_scan(records, turn_id, key):
-    """Return (usage, last matching token dict) over records; key is turn_token_usage or thread_token_usage."""
+    """Scan records once: token totals from the last matching token_usage_record under `key`, tool count, model."""
     usage = Usage()
     last = None
     for r in records:
@@ -171,10 +171,17 @@ def _codex_scan(records, turn_id, key):
 
 class CodexTranscript(_Tail):
     def read_turn(self, turn_id):
+        """Usage of one turn from the records appended since the previous read.
+
+        Call it once, at Stop time, before any other read on this transcript: the
+        offset moves past the turn's records, so a second call for the same turn
+        sees nothing and returns an empty Usage.
+        """
         return _codex_scan(self.records(), turn_id, "turn_token_usage")
 
     @classmethod
     def read_whole(cls, path):
+        """Whole-file totals (thread_token_usage) and duration, for a subagent transcript."""
         records = cls(path).records()
         usage = _codex_scan(records, None, "thread_token_usage")
         usage.duration = _span(records)
