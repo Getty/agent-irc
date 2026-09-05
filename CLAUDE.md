@@ -81,4 +81,3 @@ observed behaviour and the date.
 | hook-triggered `tools/call` passes without approval | | |
 | `SessionEnd` reaches the server before stdin closes | | |
 | `async: true` keeps delivery order | | |
-```
