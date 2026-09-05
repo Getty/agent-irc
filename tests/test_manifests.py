@@ -45,8 +45,13 @@ class ManifestTests(unittest.TestCase):
     def test_codex_mcp_json_is_a_self_locating_bootstrap(self):
         m = load(".mcp.codex.json")
         self.assertEqual(m["irc"]["command"], "python3")
-        self.assertEqual(m["irc"]["args"][0], "-c")
-        code = m["irc"]["args"][1]
+        # "-I" (isolated mode) keeps the session cwd off sys.path -- without
+        # it, a cloned repo with a top-level glob.py/runpy.py would shadow
+        # the stdlib modules this bootstrap imports and execute on Codex
+        # startup (see CLAUDE.md).
+        self.assertEqual(m["irc"]["args"][0], "-I")
+        self.assertEqual(m["irc"]["args"][1], "-c")
+        code = m["irc"]["args"][2]
         self.assertIn("plugins", code)
         self.assertIn("agent-irc", code)
         self.assertIn("CODEX_HOME", code)

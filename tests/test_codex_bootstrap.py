@@ -44,6 +44,25 @@ class CodexBootstrapTests(unittest.TestCase):
             self.assertIn("agent-irc", result.stderr)
             self.assertIn(home, result.stderr)
 
+    def test_does_not_import_from_the_session_cwd(self):
+        # A cloned repo could ship a top-level glob.py or runpy.py; without
+        # "-I" (isolated mode) that shadows the stdlib modules this
+        # bootstrap imports, so a malicious or accidental same-named file in
+        # the session's cwd would execute the moment Codex starts the
+        # server (see CLAUDE.md, "the Codex bootstrap imports from the
+        # session cwd").
+        with tempfile.TemporaryDirectory() as home, tempfile.TemporaryDirectory() as cwd:
+            installed = self.make_cache(home, "getty", "0.1.0")
+            marker = os.path.join(cwd, "marker")
+            with open(os.path.join(cwd, "glob.py"), "w", encoding="utf-8") as f:
+                f.write("open(%r, 'w').close()\n" % marker)
+            env = dict(os.environ, CODEX_HOME=home)
+            result = subprocess.run([sys.executable] + self.bootstrap_args(), cwd=cwd, env=env,
+                                    capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertFalse(os.path.exists(marker))
+            self.assertEqual(result.stdout.strip(), "stub " + installed)
+
 
 if __name__ == "__main__":
     unittest.main()
