@@ -245,7 +245,8 @@ The harness is detected from `clientInfo.name` in `initialize` and shown as
 `claude` or `codex` when the name contains one of those words; any other name
 is shown verbatim. The exact names both harnesses send are recorded in
 `CLAUDE.md` once observed (§14). Stdin EOF means the harness is gone: every connection sends
-`QUIT` with the session summary, the process exits within two seconds.
+`QUIT` with the session summary; the dispatcher drain and the connection
+joins each have a two-second budget, four seconds worst case.
 
 Log output goes to stderr only, which the harnesses capture in their MCP logs.
 `AGENT_IRC_DEBUG=1` makes it verbose.
@@ -519,10 +520,13 @@ one debug log line. Never an error to the harness.
 ## 13. Distribution
 
 Repository `Getty/agent-irc`, added to `Getty/marketplace` in both
-`.claude-plugin/marketplace.json` and `.agents/plugins/marketplace.json`, like
-`briefing`. License Artistic-2.0 to match `briefing`; change before the first
-release if MIT is preferred. Conventional commits, `--signoff`. A `CLAUDE.md`
-documents the two-harness traps found in §14 the way `briefing`'s does.
+`.claude-plugin/marketplace.json` and `.agents/plugins/api_marketplace.json`
+(Codex's actual recognized marketplace manifest filename — verified live,
+2026-09-05, Task 18; `.agents/plugins/marketplace.json` is not one Codex
+looks for), like `briefing`. License Artistic-2.0 to match `briefing`;
+change before the first release if MIT is preferred. Conventional commits,
+`--signoff`. A `CLAUDE.md` documents the two-harness traps found in §14 the
+way `briefing`'s does.
 
 ## 14. Verified against a real harness before release
 

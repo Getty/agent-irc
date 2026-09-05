@@ -18,7 +18,8 @@ the server's single tool `event`. Nothing else runs.
 .mcp.json                    Claude Code server: python3 ${CLAUDE_PLUGIN_ROOT}/bin/agent-irc
 .mcp.codex.json              Codex server: python3 -c bootstrap that globs $CODEX_HOME/plugins/cache/*/agent-irc/*/bin/agent-irc
 hooks/hooks.json             Claude Code hooks (loaded by convention, not named in the manifest)
-hooks/codex.json             the same hooks minus SessionEnd and the Claude-only events
+hooks/codex.json             Codex hooks: bare server name `irc`, one per-event field whitelist
+                              (Codex rejects unknown ${…} placeholders), no SessionEnd
 bin/agent-irc                entry point
 agent_irc/text.py            string helpers            agent_irc/irc.py     connection thread
 agent_irc/config.py          settings, trust, merge    agent_irc/mcp.py     JSON-RPC loop
@@ -140,6 +141,15 @@ field set anyway on the chance a future Codex build fixes the dispatch.
 Because Codex runs one MCP server for the whole session regardless (see the
 table below), the main turn's own tool calls and IRC lines are unaffected —
 only subagent start/stop announcements are silently missing.
+
+**Codex 0.153 limitations, summarized.** The traps above add up to three
+things a Codex user sees in IRC that a Claude Code user doesn't: no `⇢`/`⇠`
+subagent start/stop lines at all; a Codex subagent's own tool calls appear
+as, and count toward, the *main* turn instead of the subagent, because
+`agent_id` cannot be added to `PreToolUse`/`PostToolUse`'s field whitelist
+without Codex hard-failing the hook; and `PermissionRequest`/`PostCompact`
+carry only the base field set (no tool or trigger detail), since neither
+event could be triggered live to confirm a wider whitelist is safe.
 
 **Harnesses end the server by signal, not by EOF.** Task 19 assumed Codex's
 missing closing line meant it drops the pipe without the `for raw in stdin`

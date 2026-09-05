@@ -112,6 +112,12 @@ so a cloned repository cannot redirect your sessions.
 
 Tool outputs are never sent.
 
+**Codex 0.153 limitations:** no `⇢`/`⇠` subagent start/stop lines at any
+level (Codex never delivers the hooks for them); a Codex subagent's own tool
+calls appear as, and count toward, the main turn instead of the subagent;
+and `PermissionRequest`/`PostCompact` carry less detail than on Claude Code.
+See `CLAUDE.md` for why.
+
 ## How it works
 
 The plugin bundles one MCP server, `irc`, which the harness starts with the
@@ -128,6 +134,10 @@ python3 -m unittest discover tests
 
 Tests use an in-process fake IRC server and never touch the network beyond
 `127.0.0.1`. See `CLAUDE.md` for the two-harness traps.
+
+**Debugging:** set `AGENT_IRC_DEBUG=1` in the environment the harness starts
+the server with to log every raw event and every transcript read failure;
+stderr lands in the harness's MCP log.
 
 ## License
 
