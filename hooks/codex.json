@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "mcp_tool",
-            "server": "plugin:agent-irc:irc",
+            "server": "irc",
             "tool": "event",
             "async": true,
             "timeout": 5,
@@ -16,24 +16,7 @@
               "transcript_path": "${transcript_path}",
               "model": "${model}",
               "turn_id": "${turn_id}",
-              "agent_id": "${agent_id}",
-              "agent_type": "${agent_type}",
-              "agent_transcript_path": "${agent_transcript_path}",
-              "tool_name": "${tool_name}",
-              "tool_use_id": "${tool_use_id}",
-              "tool_input": "${tool_input}",
-              "prompt": "${prompt}",
-              "last_assistant_message": "${last_assistant_message}",
-              "message": "${message}",
-              "notification_type": "${notification_type}",
-              "error_type": "${error_type}",
-              "error_message": "${error_message}",
-              "trigger": "${trigger}",
-              "reason": "${reason}",
-              "source": "${source}",
-              "from_model": "${from_model}",
-              "to_model": "${to_model}",
-              "duration": "${duration}"
+              "prompt": "${prompt}"
             }
           }
         ]
@@ -44,7 +27,7 @@
         "hooks": [
           {
             "type": "mcp_tool",
-            "server": "plugin:agent-irc:irc",
+            "server": "irc",
             "tool": "event",
             "async": true,
             "timeout": 5,
@@ -55,24 +38,9 @@
               "transcript_path": "${transcript_path}",
               "model": "${model}",
               "turn_id": "${turn_id}",
-              "agent_id": "${agent_id}",
-              "agent_type": "${agent_type}",
-              "agent_transcript_path": "${agent_transcript_path}",
               "tool_name": "${tool_name}",
-              "tool_use_id": "${tool_use_id}",
               "tool_input": "${tool_input}",
-              "prompt": "${prompt}",
-              "last_assistant_message": "${last_assistant_message}",
-              "message": "${message}",
-              "notification_type": "${notification_type}",
-              "error_type": "${error_type}",
-              "error_message": "${error_message}",
-              "trigger": "${trigger}",
-              "reason": "${reason}",
-              "source": "${source}",
-              "from_model": "${from_model}",
-              "to_model": "${to_model}",
-              "duration": "${duration}"
+              "tool_use_id": "${tool_use_id}"
             }
           }
         ]
@@ -83,7 +51,7 @@
         "hooks": [
           {
             "type": "mcp_tool",
-            "server": "plugin:agent-irc:irc",
+            "server": "irc",
             "tool": "event",
             "async": true,
             "timeout": 5,
@@ -94,24 +62,9 @@
               "transcript_path": "${transcript_path}",
               "model": "${model}",
               "turn_id": "${turn_id}",
-              "agent_id": "${agent_id}",
-              "agent_type": "${agent_type}",
-              "agent_transcript_path": "${agent_transcript_path}",
               "tool_name": "${tool_name}",
-              "tool_use_id": "${tool_use_id}",
               "tool_input": "${tool_input}",
-              "prompt": "${prompt}",
-              "last_assistant_message": "${last_assistant_message}",
-              "message": "${message}",
-              "notification_type": "${notification_type}",
-              "error_type": "${error_type}",
-              "error_message": "${error_message}",
-              "trigger": "${trigger}",
-              "reason": "${reason}",
-              "source": "${source}",
-              "from_model": "${from_model}",
-              "to_model": "${to_model}",
-              "duration": "${duration}"
+              "tool_use_id": "${tool_use_id}"
             }
           }
         ]
@@ -122,7 +75,7 @@
         "hooks": [
           {
             "type": "mcp_tool",
-            "server": "plugin:agent-irc:irc",
+            "server": "irc",
             "tool": "event",
             "async": true,
             "timeout": 5,
@@ -134,23 +87,7 @@
               "model": "${model}",
               "turn_id": "${turn_id}",
               "agent_id": "${agent_id}",
-              "agent_type": "${agent_type}",
-              "agent_transcript_path": "${agent_transcript_path}",
-              "tool_name": "${tool_name}",
-              "tool_use_id": "${tool_use_id}",
-              "tool_input": "${tool_input}",
-              "prompt": "${prompt}",
-              "last_assistant_message": "${last_assistant_message}",
-              "message": "${message}",
-              "notification_type": "${notification_type}",
-              "error_type": "${error_type}",
-              "error_message": "${error_message}",
-              "trigger": "${trigger}",
-              "reason": "${reason}",
-              "source": "${source}",
-              "from_model": "${from_model}",
-              "to_model": "${to_model}",
-              "duration": "${duration}"
+              "agent_type": "${agent_type}"
             }
           }
         ]
@@ -161,7 +98,7 @@
         "hooks": [
           {
             "type": "mcp_tool",
-            "server": "plugin:agent-irc:irc",
+            "server": "irc",
             "tool": "event",
             "async": true,
             "timeout": 5,
@@ -175,21 +112,7 @@
               "agent_id": "${agent_id}",
               "agent_type": "${agent_type}",
               "agent_transcript_path": "${agent_transcript_path}",
-              "tool_name": "${tool_name}",
-              "tool_use_id": "${tool_use_id}",
-              "tool_input": "${tool_input}",
-              "prompt": "${prompt}",
-              "last_assistant_message": "${last_assistant_message}",
-              "message": "${message}",
-              "notification_type": "${notification_type}",
-              "error_type": "${error_type}",
-              "error_message": "${error_message}",
-              "trigger": "${trigger}",
-              "reason": "${reason}",
-              "source": "${source}",
-              "from_model": "${from_model}",
-              "to_model": "${to_model}",
-              "duration": "${duration}"
+              "last_assistant_message": "${last_assistant_message}"
             }
           }
         ]
@@ -200,7 +123,7 @@
         "hooks": [
           {
             "type": "mcp_tool",
-            "server": "plugin:agent-irc:irc",
+            "server": "irc",
             "tool": "event",
             "async": true,
             "timeout": 5,
@@ -211,24 +134,7 @@
               "transcript_path": "${transcript_path}",
               "model": "${model}",
               "turn_id": "${turn_id}",
-              "agent_id": "${agent_id}",
-              "agent_type": "${agent_type}",
-              "agent_transcript_path": "${agent_transcript_path}",
-              "tool_name": "${tool_name}",
-              "tool_use_id": "${tool_use_id}",
-              "tool_input": "${tool_input}",
-              "prompt": "${prompt}",
-              "last_assistant_message": "${last_assistant_message}",
-              "message": "${message}",
-              "notification_type": "${notification_type}",
-              "error_type": "${error_type}",
-              "error_message": "${error_message}",
-              "trigger": "${trigger}",
-              "reason": "${reason}",
-              "source": "${source}",
-              "from_model": "${from_model}",
-              "to_model": "${to_model}",
-              "duration": "${duration}"
+              "last_assistant_message": "${last_assistant_message}"
             }
           }
         ]
@@ -239,7 +145,7 @@
         "hooks": [
           {
             "type": "mcp_tool",
-            "server": "plugin:agent-irc:irc",
+            "server": "irc",
             "tool": "event",
             "async": true,
             "timeout": 5,
@@ -249,25 +155,7 @@
               "cwd": "${cwd}",
               "transcript_path": "${transcript_path}",
               "model": "${model}",
-              "turn_id": "${turn_id}",
-              "agent_id": "${agent_id}",
-              "agent_type": "${agent_type}",
-              "agent_transcript_path": "${agent_transcript_path}",
-              "tool_name": "${tool_name}",
-              "tool_use_id": "${tool_use_id}",
-              "tool_input": "${tool_input}",
-              "prompt": "${prompt}",
-              "last_assistant_message": "${last_assistant_message}",
-              "message": "${message}",
-              "notification_type": "${notification_type}",
-              "error_type": "${error_type}",
-              "error_message": "${error_message}",
-              "trigger": "${trigger}",
-              "reason": "${reason}",
-              "source": "${source}",
-              "from_model": "${from_model}",
-              "to_model": "${to_model}",
-              "duration": "${duration}"
+              "turn_id": "${turn_id}"
             }
           }
         ]
@@ -278,7 +166,7 @@
         "hooks": [
           {
             "type": "mcp_tool",
-            "server": "plugin:agent-irc:irc",
+            "server": "irc",
             "tool": "event",
             "async": true,
             "timeout": 5,
@@ -288,25 +176,7 @@
               "cwd": "${cwd}",
               "transcript_path": "${transcript_path}",
               "model": "${model}",
-              "turn_id": "${turn_id}",
-              "agent_id": "${agent_id}",
-              "agent_type": "${agent_type}",
-              "agent_transcript_path": "${agent_transcript_path}",
-              "tool_name": "${tool_name}",
-              "tool_use_id": "${tool_use_id}",
-              "tool_input": "${tool_input}",
-              "prompt": "${prompt}",
-              "last_assistant_message": "${last_assistant_message}",
-              "message": "${message}",
-              "notification_type": "${notification_type}",
-              "error_type": "${error_type}",
-              "error_message": "${error_message}",
-              "trigger": "${trigger}",
-              "reason": "${reason}",
-              "source": "${source}",
-              "from_model": "${from_model}",
-              "to_model": "${to_model}",
-              "duration": "${duration}"
+              "turn_id": "${turn_id}"
             }
           }
         ]
@@ -317,7 +187,7 @@
         "hooks": [
           {
             "type": "mcp_tool",
-            "server": "plugin:agent-irc:irc",
+            "server": "irc",
             "tool": "event",
             "async": true,
             "timeout": 5,
@@ -327,25 +197,7 @@
               "cwd": "${cwd}",
               "transcript_path": "${transcript_path}",
               "model": "${model}",
-              "turn_id": "${turn_id}",
-              "agent_id": "${agent_id}",
-              "agent_type": "${agent_type}",
-              "agent_transcript_path": "${agent_transcript_path}",
-              "tool_name": "${tool_name}",
-              "tool_use_id": "${tool_use_id}",
-              "tool_input": "${tool_input}",
-              "prompt": "${prompt}",
-              "last_assistant_message": "${last_assistant_message}",
-              "message": "${message}",
-              "notification_type": "${notification_type}",
-              "error_type": "${error_type}",
-              "error_message": "${error_message}",
-              "trigger": "${trigger}",
-              "reason": "${reason}",
-              "source": "${source}",
-              "from_model": "${from_model}",
-              "to_model": "${to_model}",
-              "duration": "${duration}"
+              "turn_id": "${turn_id}"
             }
           }
         ]

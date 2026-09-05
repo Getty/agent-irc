@@ -52,14 +52,68 @@ class ManifestTests(unittest.TestCase):
         self.assertIn("CODEX_HOME", code)
         self.assertNotIn("${", code)
 
-    def test_codex_hooks_are_the_shared_hooks_minus_session_end_and_claude_only_events(self):
+    def test_codex_hooks_address_the_bare_server_name(self):
+        # Live verification (2026-09-05, Codex 0.153.4) found that an
+        # mcp_tool hook whose "server" is the plugin-qualified form used by
+        # Claude Code ("plugin:agent-irc:irc") never calls tools/call at
+        # all -- Codex silently marks the hook "Failed" with no diagnostic.
+        # Codex wants the bare name declared in .mcp.codex.json instead.
+        codex = load("hooks/codex.json")["hooks"]
+        for event, groups in codex.items():
+            for group in groups:
+                for hook in group["hooks"]:
+                    self.assertEqual(hook["server"], "irc", event)
+
+    def test_codex_hooks_use_a_per_event_field_whitelist(self):
+        # Live verification (2026-09-05, Codex 0.153.4) found a second,
+        # independent failure mode: an mcp_tool hook's "input" template is
+        # rejected outright -- again with no tools/call ever sent and no
+        # diagnostic beyond "Failed" -- if it references a `${name}`
+        # placeholder Codex doesn't statically recognize for that event.
+        # Unlike Claude Code (which substitutes an empty string for a field
+        # an event doesn't carry), Codex hard-fails the whole hook, and
+        # "recognized" is narrower than "present in the event's own JSON":
+        # agent_id/agent_type DO appear in Codex's raw PreToolUse/
+        # PostToolUse payload for a subagent's own tool call (confirmed by
+        # dumping it to a "type": "command" hook), yet using them in a
+        # PreToolUse/PostToolUse *mcp_tool* template still hard-fails the
+        # hook -- so each set below is only what was actually confirmed
+        # live, via that same dump technique, to work for THAT hook type.
+        # Separately (also live-confirmed, not covered by this test):
+        # SubagentStart/SubagentStop's mcp_tool hooks never call tools/call
+        # at all under Codex 0.153.4, with *any* input map including the
+        # base fields alone -- a live, undiagnosed Codex limitation, not a
+        # field-naming problem, so their fields are kept as the most useful
+        # set on the chance a future Codex fixes the dispatch (see
+        # CLAUDE.md). Interrupt, PermissionRequest and PostCompact could
+        # not be triggered from `codex exec` and conservatively get only
+        # the fields common to every other event.
+        base = {"event", "session_id", "cwd", "transcript_path", "model", "turn_id"}
+        fields = {
+            "UserPromptSubmit": base | {"prompt"},
+            "PreToolUse": base | {"tool_name", "tool_input", "tool_use_id"},
+            "PostToolUse": base | {"tool_name", "tool_input", "tool_use_id"},
+            "SubagentStart": base | {"agent_id", "agent_type"},
+            "SubagentStop": base | {"agent_id", "agent_type", "agent_transcript_path", "last_assistant_message"},
+            "Stop": base | {"last_assistant_message"},
+            "Interrupt": base,
+            "PermissionRequest": base,
+            "PostCompact": base,
+        }
         shared = load("hooks/hooks.json")["hooks"]
         codex = load("hooks/codex.json")["hooks"]
-        codex_events = {"UserPromptSubmit", "PreToolUse", "PostToolUse", "SubagentStart", "SubagentStop",
-                        "Stop", "Interrupt", "PermissionRequest", "PostCompact"}
-        self.assertEqual(set(codex), codex_events)
-        for event in codex_events:
-            self.assertEqual(codex[event], shared[event], event)
+        self.assertEqual(set(codex), set(fields))
+        for event, keys in fields.items():
+            hook = codex[event][0]["hooks"][0]
+            self.assertEqual(hook["type"], "mcp_tool", event)
+            self.assertEqual(hook["tool"], "event", event)
+            self.assertTrue(hook["async"], event)
+            self.assertEqual(hook["timeout"], 5, event)
+            self.assertEqual(set(hook["input"]), keys, event)
+            # every value codex does send stays the same substitution as
+            # the shared Claude Code hooks file, just fewer keys
+            for key in keys:
+                self.assertEqual(hook["input"][key], shared[event][0]["hooks"][0]["input"][key], (event, key))
 
     def test_versions_match(self):
         import agent_irc
