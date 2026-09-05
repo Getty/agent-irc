@@ -76,6 +76,15 @@ class ClaudeTranscriptTests(unittest.TestCase):
         self.assertEqual(u.model, "claude-sonnet-5")
         self.assertEqual(u.output, 198 + 349)
 
+    def test_rewritten_shorter_file_is_read_from_the_start(self):
+        self.append(assistant("r1", USAGE_A), assistant("r2", USAGE_B))
+        t = ClaudeTranscript(self.path)
+        self.assertEqual(t.read_new().output, 198 + 349)
+        with open(self.path, "w", encoding="utf-8") as f:
+            f.write(json.dumps(assistant("r3", {"input_tokens": 1, "output_tokens": 7})) + "\n")
+        self.assertEqual(t.read_new().output, 7)
+        self.assertEqual(t.read_new().output, 0)
+
     def test_subagent_path(self):
         self.assertEqual(claude_subagent_path("/h/.claude/projects/p/sess.jsonl", "sess", "a293"),
                          "/h/.claude/projects/p/sess/subagents/agent-a293.jsonl")

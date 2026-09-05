@@ -65,6 +65,8 @@ class _Tail:
 
     def records(self):
         try:
+            if os.path.getsize(self.path) < self.offset:
+                self.offset = 0
             with open(self.path, "rb") as f:
                 f.seek(self.offset)
                 data = f.read()
