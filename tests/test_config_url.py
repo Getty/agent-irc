@@ -1,6 +1,6 @@
 import unittest
 
-from agent_irc.config import Server, Target, expand_env, parse_url
+from agent_irc.config import Server, Target, expand_env, parse_url, redact_url
 
 
 class ParseUrlTests(unittest.TestCase):
@@ -52,6 +52,22 @@ class ParseUrlTests(unittest.TestCase):
         self.assertEqual(a, b)
         self.assertEqual(hash(a), hash(b))
 
+    def test_server_identity_ignores_insecure(self):
+        a = parse_url("ircs://u:p@h/#a?insecure=1", "x").server
+        b = parse_url("ircs://u:p@h/#b", "x").server
+        self.assertTrue(a.insecure)
+        self.assertFalse(b.insecure)
+        self.assertEqual(a, b)
+        self.assertEqual(hash(a), hash(b))
+
+    def test_errors_do_not_leak_credentials(self):
+        for bad in ("ircs://realuser:realsecret@h:notaport/#c", "ircs://realuser:realsecret@h/"):
+            with self.assertRaises(ValueError) as ctx:
+                parse_url(bad, "u")
+            self.assertNotIn("realsecret", str(ctx.exception), bad)
+            self.assertNotIn("realuser", str(ctx.exception), bad)
+            self.assertIn("***@h", str(ctx.exception), bad)
+
 
 class ExpandEnvTests(unittest.TestCase):
     def test_expands(self):
@@ -62,6 +78,14 @@ class ExpandEnvTests(unittest.TestCase):
         with self.assertRaises(KeyError) as ctx:
             expand_env("${A}${B}", {"A": "1"})
         self.assertEqual(ctx.exception.args[0], "B")
+
+
+class RedactTests(unittest.TestCase):
+    def test_redact(self):
+        self.assertEqual(redact_url("ircs://u:p@h:6697/#c"), "ircs://***@h:6697/#c")
+        self.assertEqual(redact_url("irc://u@h/#c"), "irc://***@h/#c")
+        self.assertEqual(redact_url("irc://h/#c"), "irc://h/#c")
+        self.assertEqual(redact_url("junk"), "junk")
 
 
 if __name__ == "__main__":

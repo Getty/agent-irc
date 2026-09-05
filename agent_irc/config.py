@@ -3,7 +3,7 @@
 import json
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Optional
 from urllib.parse import unquote
 
@@ -19,7 +19,7 @@ class Server:
     port: int
     user: str
     password: Optional[str]
-    insecure: bool
+    insecure: bool = field(compare=False)
 
     @property
     def tls(self):
@@ -46,11 +46,18 @@ _URL_RE = re.compile(
     r"^(ircs?)://(?:([^@/]*)@)?([^/:?#@]+)(?::(\d+))?/([^?]*)(?:\?(.*))?$"
 )
 
+_USERINFO_RE = re.compile(r"^([A-Za-z]+://)[^@/]*@")
+
+
+def redact_url(url):
+    """The URL with any user:password part replaced by ***, for log and error text."""
+    return _USERINFO_RE.sub(r"\1***@", str(url))
+
 
 def parse_url(url, default_user):
     m = _URL_RE.match(str(url).strip())
     if not m:
-        raise ValueError("not an irc:// or ircs:// URL with a channel: %r" % url)
+        raise ValueError("not an irc:// or ircs:// URL with a channel: %r" % redact_url(url))
     scheme, userinfo, host, port, path, query = m.groups()
     user, password = default_user, None
     if userinfo is not None:
@@ -64,7 +71,7 @@ def parse_url(url, default_user):
     port = int(port) if port else (6697 if scheme == "ircs" else 6667)
     channel = unquote(path).strip()
     if not channel:
-        raise ValueError("URL has no channel: %r" % url)
+        raise ValueError("URL has no channel: %r" % redact_url(url))
     if channel[0] not in "#&+!":
         channel = "#" + channel
     insecure = False
