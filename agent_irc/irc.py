@@ -152,8 +152,7 @@ class IrcConnection(threading.Thread):
         deadline = self.clock() + REGISTRATION_TIMEOUT
         while True:
             if self.stop_event.is_set():
-                self._drain(self.clock() + 1.5)
-                self._raw("QUIT :" + self.quit_message)
+                self._finish()
                 return
             if not self.registered and self.clock() > deadline:
                 raise ConnectionError("registration timed out")
@@ -163,6 +162,35 @@ class IrcConnection(threading.Thread):
                 if delay > 0:
                     timeout = min(timeout, delay)
             self._read(timeout)
+
+    def _finish(self):
+        """On stop: let registration in flight complete, flush the queue, then quit.
+
+        Without this, a close() requested before the 001 arrives would never
+        read it, so the connection would quit without ever joining or
+        delivering the messages already queued for it.
+        """
+        deadline = self.clock() + 1.5
+        while not self.registered and self.clock() < deadline:
+            self._read(min(0.2, max(deadline - self.clock(), 0.0)))
+        self._drain(deadline)
+        self._raw("QUIT :" + self.quit_message)
+        self._wait_for_close(self.clock() + 0.5)
+
+    def _wait_for_close(self, deadline):
+        """Drain anything still arriving (a delayed JOIN ack, the server's
+        closing ERROR) until the peer closes the connection or we time out.
+
+        Closing a socket with unread data left in its receive buffer makes
+        Linux send an RST instead of a clean FIN, which can make the peer
+        drop the very bytes -- JOIN, the queued PRIVMSGs, QUIT -- we just
+        sent it, so we must not call close() while any of that is pending.
+        """
+        try:
+            while self.clock() < deadline:
+                self._read(min(0.2, max(deadline - self.clock(), 0.0)))
+        except ConnectionError:
+            pass
 
     def _drain(self, deadline):
         while self.registered and self.clock() < deadline:
