@@ -357,7 +357,7 @@ part omitted when zero.
 | PostToolUseFailure (Claude) | `✖ Bash 0.3s: <summary> — <first line of error_message>` |
 | SubagentStart | `⇢ subagent Explore: find hook payloads` |
 | SubagentStop | `⇠ subagent Explore done · 42s · 18 tools · 31k in / 2k out · claude-sonnet-5` |
-| Stop | `✔ turn · 3m12s · 24 tools · 210k in (190k cached) / 6k out · claude-fable-5-1` — duration from the `UserPromptSubmit` to the `Stop` on the server clock; tool count = `PostToolUse` events without `agent_id` since that prompt |
+| Stop | `✔ turn · 3m12s · 24 tools · 210k in (190k cached) / 6k out · claude-fable-5-1` — duration from the `UserPromptSubmit` to the `Stop` on the server clock; tool count = completed tool calls without `agent_id` since that prompt, i.e. `PostToolUse` plus `PostToolUseFailure` events — a failed call is still a call, and Codex has no failure event to tell them apart |
 | StopFailure (Claude) | `✖ turn failed: rate_limit — <first line of error_message>` |
 | PermissionRequest | `⚠ permission: Bash: rm -rf build` |
 | Notification `idle_prompt` (Claude) | `… waiting for input` |
