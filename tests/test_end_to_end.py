@@ -73,7 +73,6 @@ class EndToEndTests(unittest.TestCase):
         return proc
 
     def assert_quits_on(self, signum):
-        import signal as _signal
         fake = FakeIrcServer()
         self.addCleanup(fake.close)
         with tempfile.TemporaryDirectory() as tmp:
@@ -107,7 +106,7 @@ class EndToEndTests(unittest.TestCase):
             proc.send_signal(signal.SIGTERM)
             self.assertTrue(fake.wait_for(lambda ls: any(l.startswith("QUIT :session ended") for l in ls), timeout=5))
             out, err = proc.communicate(timeout=10)
-            self.assertIn(proc.returncode, (128 + signal.SIGINT, 128 + signal.SIGTERM), err)
+            self.assertEqual(proc.returncode, 128 + signal.SIGINT, err)
             self.assertNotIn("Traceback", err)
 
 

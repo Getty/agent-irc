@@ -17,6 +17,7 @@ class FakeConnection:
     def __init__(self, server, channels, nick_base, realname, log, **kw):
         self.server, self.channels, self.nick_base, self.realname = server, channels, nick_base, realname
         self.messages, self.quit = [], None
+        self.begin_close_calls = 0
         FakeConnection.instances.append(self)
 
     def start(self):
@@ -26,6 +27,7 @@ class FakeConnection:
         self.messages.append(text)
 
     def begin_close(self, quit_message):
+        self.begin_close_calls += 1
         self.quit = quit_message
 
     def join(self, timeout=None):
@@ -175,9 +177,10 @@ class AppTests(unittest.TestCase):
             rpc(2, "tools/call", {"name": "event", "arguments": {"event": "UserPromptSubmit", "session_id": "s",
                                                                   "cwd": self.cwd, "prompt": "x"}}),
         ])
-        quits_before = [c.quit for c in FakeConnection.instances]
+        self.assertEqual([c.begin_close_calls for c in FakeConnection.instances], [1])
         app.shutdown()
-        self.assertEqual([c.quit for c in FakeConnection.instances], quits_before)
+        app.shutdown()
+        self.assertEqual([c.begin_close_calls for c in FakeConnection.instances], [1])
 
 
 if __name__ == "__main__":
