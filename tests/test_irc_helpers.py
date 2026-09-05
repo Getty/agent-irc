@@ -29,6 +29,15 @@ class FloodBucketTests(unittest.TestCase):
         clock.t += 100
         self.assertEqual([b.acquire_delay() for _ in range(3)], [0.0, 0.0, 1.0])
 
+    def test_backward_clock_never_locks_the_bucket(self):
+        clock = Clock()
+        b = FloodBucket(burst=2, interval=1.0, clock=clock)
+        self.assertEqual([b.acquire_delay() for _ in range(2)], [0.0, 0.0])
+        clock.t -= 3600
+        self.assertLessEqual(b.acquire_delay(), 1.0)
+        clock.t += 1.0
+        self.assertEqual(b.acquire_delay(), 0.0)
+
 
 class ParseLineTests(unittest.TestCase):
     def test_prefix_and_trailing(self):

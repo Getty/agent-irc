@@ -32,7 +32,8 @@ class FloodBucket:
     def acquire_delay(self):
         """Take a token and return 0, or return the seconds until the next token."""
         now = self.clock()
-        self.tokens = min(self.burst, self.tokens + (now - self.last) / self.interval)
+        elapsed = max(0.0, now - self.last)
+        self.tokens = min(self.burst, self.tokens + elapsed / self.interval)
         self.last = now
         if self.tokens >= 1.0:
             self.tokens -= 1.0
