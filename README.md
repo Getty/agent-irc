@@ -202,4 +202,7 @@ unexpectedly; stderr lands in the harness's MCP log.
 
 ## License
 
-Artistic License 2.0.
+Copyright (c) 2026 Torsten Raudssus.
+
+This is free software; you can redistribute it and/or modify it under the
+terms of the [Artistic License 2.0](LICENSE).
