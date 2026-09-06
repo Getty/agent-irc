@@ -20,6 +20,11 @@ MIN_PAYLOAD = 80  # a server claiming less room than this is not believed
 # mask it actually puts in front of our messages.
 UNKNOWN_USERHOST = 75
 QUEUE_LIMIT = 500
+# After 001 the server sends its ISUPPORT (005) in the same burst; the first
+# pump waits this long for it, so a line queued before registration is split to
+# the advertised LINELEN, not the 512 fallback. Bounded, because a server may
+# send no ISUPPORT at all -- then the first pump proceeds on the fallback.
+GREETING_GRACE = 0.5
 BACKOFF = (5, 10, 20, 40, 60)
 REGISTRATION_TIMEOUT = 30.0
 NICK_LIMITS = (30, 9)
@@ -104,6 +109,7 @@ class IrcConnection(threading.Thread):
         self.isupport = {}
         self.linelen = LINELEN
         self.pending = []
+        self.greeting_deadline = None
 
     # -- public -------------------------------------------------------------
 
@@ -172,6 +178,7 @@ class IrcConnection(threading.Thread):
         self.mask = None
         self.isupport = {}
         self.linelen = LINELEN
+        self.greeting_deadline = None
         with self.lock:
             # Chunks cut to the old connection's budget go back to the queue:
             # this server may answer with a different LINELEN than the last one.
@@ -195,11 +202,19 @@ class IrcConnection(threading.Thread):
             if not self.registered and self.clock() > deadline:
                 raise ConnectionError("registration timed out")
             timeout = 0.2
-            if self.registered:
+            if self.registered and self._greeting_settled():
                 delay = self._pump()
                 if delay > 0:
                     timeout = min(timeout, delay)
             self._read(timeout)
+
+    def _greeting_settled(self):
+        """True once the post-001 burst has had its chance: as soon as ISUPPORT
+        (005) is in, or after GREETING_GRACE if the server sends none. Until
+        then the first pump holds off so LINELEN is known before it splits."""
+        if self.isupport:
+            return True
+        return self.greeting_deadline is not None and self.clock() >= self.greeting_deadline
 
     def _finish(self):
         """On stop: let registration in flight complete, flush the queue,
@@ -332,6 +347,7 @@ class IrcConnection(threading.Thread):
             self._raw("PONG :" + (params[-1] if params else ""))
         elif command == "001":
             self.registered = True
+            self.greeting_deadline = self.clock() + GREETING_GRACE
             self.attempts = 0
             self.log("agent-irc: %s: registered as %s" % (self.server.label, self.nick))
             for channel in self.channels:

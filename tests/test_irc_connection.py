@@ -110,6 +110,17 @@ class ConnectionTests(unittest.TestCase):
         self.assertTrue(wait_until(lambda: self.privmsgs(fake)))
         self.assertEqual(self.privmsgs(fake), ["ä" * 300])  # 600 bytes, one line
 
+    def test_early_line_waits_for_a_delayed_isupport_linelen(self):
+        """A line queued before registration must not be pumped with the 512
+        fallback while the server's LINELEN (in a 005 that lands in a later
+        read than 001) is still in flight -- else it is needlessly split."""
+        fake = FakeIrcServer(isupport=("LINELEN=8192",), isupport_delay=0.05)
+        self.addCleanup(fake.close)
+        conn = self.connect(fake, channels=("#a",))
+        conn.send_message("ä" * 300)  # 600 bytes: one line at 8192, two at 512
+        self.assertTrue(wait_until(lambda: self.privmsgs(fake)))
+        self.assertEqual(self.privmsgs(fake), ["ä" * 300])
+
     def test_nonsense_linelen_is_ignored(self):
         fake = FakeIrcServer(isupport=("LINELEN=12", "CHANTYPES=#"))
         self.addCleanup(fake.close)

@@ -83,7 +83,15 @@ splits each into as many `PRIVMSG`s as that connection needs, one flood-bucket
 token each, indent preserved on continuations. Two things follow: `_drain()`
 has to check `pending` as well as `queue`, and a line is never truncated —
 `cut_bytes` survives only as a last-resort guard in `_raw()` for the lines we
-build ourselves (a long `QUIT` summary).
+build ourselves (a long `QUIT` summary). One timing trap follows from this:
+`LINELEN` arrives in the `005` burst *after* `001`, and a server sends the two
+as separate writes that can land in separate reads. A line already queued
+before registration would then be pumped the instant `001` sets `registered`,
+splitting it to the 512 fallback before `005` raised the limit — measured
+flaky 3/15 in the large-`Write` end-to-end test. So the first pump waits for
+`_greeting_settled()`: ISUPPORT in hand, or a `GREETING_GRACE` (0.5s) lapse for
+a server that sends none. Covered by
+`tests/test_irc_connection.py::test_early_line_waits_for_a_delayed_isupport_linelen`.
 
 **`full` shortens nothing, which moves the real limit to the sender.**
 `SUMMARY_LIMIT`/`PROMPT_LIMIT` apply below `full` only: there a tool call is
