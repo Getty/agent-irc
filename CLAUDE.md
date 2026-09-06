@@ -31,7 +31,17 @@ tests/                       unittest; tests/fakeirc.py is the fake ircd
 ## Rules
 
 - Python 3.9+, stdlib only. `tomllib` is imported inside a function with a
-  fallback parser for the one table we need.
+  fallback parser for the one table we need. **The fallback has to grow with
+  every kind of value a config key can take.** It shipped understanding
+  strings and string arrays, so when `flood_burst`/`flood_interval`/`queue_limit`
+  arrived they were silently dropped on Python < 3.11 — a Codex user there ran
+  on the default bucket and queue cap no matter what the config said, and CI
+  caught it only because `test_full_level_sends_a_large_tool_input_whole` then
+  needs 20 minutes instead of a second. A development machine with only 3.11+
+  never takes that path, which is why
+  `tests/test_config_files.py::ReaderTests::test_toml_namespace_fallback`
+  forces it with `mock.patch.object(config, "_load_toml", return_value=None)`;
+  keep asserting the real keys there.
 - The MCP loop is the only writer to stdout. Everything else logs to stderr.
 - `tools/call` must return immediately. Formatting, transcript reads and IRC
   I/O happen on other threads.

@@ -123,6 +123,10 @@ def read_json_namespace(path, log=None):
 _HEADER_RE = re.compile(r"^\s*\[([^\]]+)\]\s*(?:#.*)?$")
 _STRING_RE = re.compile(r'"((?:[^"\\]|\\.)*)"|\'([^\']*)\'')
 _KEY_RE = re.compile(r"^[ \t]*([A-Za-z0-9_-]+)[ \t]*=[ \t]*", re.MULTILINE)
+# A number only when nothing but blanks or a comment follow it, so a bare
+# TOML date (1979-05-27) is skipped rather than read as its year.
+_NUMBER_RE = re.compile(r"[+-]?(?:0|[1-9](?:_?[0-9])*)(?:\.[0-9](?:_?[0-9])*)?"
+                        r"(?:[eE][+-]?[0-9](?:_?[0-9])*)?(?=[ \t]*(?:#|$))", re.MULTILINE)
 _ESCAPES = {'"': '"', "\\": "\\", "n": "\n", "t": "\t"}
 
 
@@ -170,8 +174,18 @@ def _parse_array(body, start):
     return values, len(body)
 
 
+def _toml_number(text):
+    text = text.replace("_", "")
+    return float(text) if ("." in text or "e" in text or "E" in text) else int(text)
+
+
 def parse_toml_table(text, table):
-    """Minimal TOML: string and string-array values of one table. Fallback for Python < 3.11."""
+    """Minimal TOML: string, number and string-array values of one table.
+
+    Fallback for Python < 3.11, which has no tomllib. The numbers matter:
+    without them the tuning keys vanish there and the connection silently
+    runs on the default flood bucket and queue cap.
+    """
     body = _toml_table_body(text, table)
     result = {}
     pos = 0
@@ -187,9 +201,14 @@ def parse_toml_table(text, table):
         if sm:
             result[key] = _toml_unescape(sm)
             pos = sm.end()
-        else:
-            nl = body.find("\n", pos)
-            pos = len(body) if nl < 0 else nl + 1
+            continue
+        nm = _NUMBER_RE.match(body, pos)
+        if nm:
+            result[key] = _toml_number(nm.group(0))
+            pos = nm.end()
+            continue
+        nl = body.find("\n", pos)
+        pos = len(body) if nl < 0 else nl + 1
 
 
 def _load_toml(path, log=None):

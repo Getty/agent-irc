@@ -18,6 +18,9 @@ log_channels = [
   "ircs://u:p@h/#log",  # comment
 ]
 level = "full"
+flood_burst = 2000
+flood_interval = 0.0005
+queue_limit = 0
 ignored = 3
 
 [other]
@@ -31,7 +34,10 @@ class TomlFallbackTests(unittest.TestCase):
         self.assertEqual(t["channels"], ["ircs://u:p@h/#a", "irc://h/#b"])
         self.assertEqual(t["log_channels"], ["ircs://u:p@h/#log"])
         self.assertEqual(t["level"], "full")
-        self.assertNotIn("ignored", t)
+        self.assertEqual(t["flood_burst"], 2000)
+        self.assertEqual(t["flood_interval"], 0.0005)
+        self.assertEqual(t["queue_limit"], 0)
+        self.assertEqual(t["ignored"], 3)  # parsed here, dropped by merge_layers
 
     def test_parse_quoted_table_name(self):
         t = config.parse_toml_table(CODEX_TOML, 'projects."/home/g"')
@@ -53,6 +59,20 @@ class TomlFallbackTests(unittest.TestCase):
         t = config.parse_toml_table(text, "agent-irc")
         self.assertEqual(t["channels"], ["irc://h/#a", "irc://h/#b"])
         self.assertEqual(t["level"], "full")
+
+    def test_numbers(self):
+        text = ("[agent-irc]\na = 0\nb = -7\nc = 1_000\nd = 0.5\n"
+                "e = 2.5e-3\nf = 12  # trailing comment\n")
+        t = config.parse_toml_table(text, "agent-irc")
+        self.assertEqual(t, {"a": 0, "b": -7, "c": 1000, "d": 0.5, "e": 2.5e-3, "f": 12})
+        self.assertIsInstance(t["a"], int)
+        self.assertIsInstance(t["d"], float)
+
+    def test_values_that_are_not_strings_or_numbers_are_skipped(self):
+        # A bare date must not be read as the year, and a key we cannot
+        # represent is left out rather than guessed at.
+        t = config.parse_toml_table('[agent-irc]\nd = 1979-05-27\nb = true\nlevel = "full"\n', "agent-irc")
+        self.assertEqual(t, {"level": "full"})
 
     def test_unterminated_array_keeps_what_it_read(self):
         t = config.parse_toml_table('[agent-irc]\nchannels = ["irc://h/#a"\n', "agent-irc")
@@ -95,6 +115,11 @@ class ReaderTests(unittest.TestCase):
         with mock.patch.object(config, "_load_toml", return_value=None):
             t = config.read_toml_namespace(p)
         self.assertEqual(t["log_channels"], ["ircs://u:p@h/#log"])
+        # The tuning numbers reach the fallback too -- without them a Python
+        # older than 3.11 silently runs on the default bucket and queue cap.
+        self.assertEqual(t["flood_burst"], 2000)
+        self.assertEqual(t["flood_interval"], 0.0005)
+        self.assertEqual(t["queue_limit"], 0)
 
     def test_toml_missing(self):
         self.assertEqual(config.read_toml_namespace(os.path.join(self.dir, "nope.toml")), {})
