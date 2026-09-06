@@ -24,7 +24,7 @@ class MergeTests(unittest.TestCase):
             ({"channels": [], "log_channels": []}, []),
         ]
         for project, expected in cases:
-            lists, level = config.merge_layers([user, project])
+            lists, level, _ = config.merge_layers([user, project])
             got = [config.parse_url(u, "x").channel for name in lists for u in lists[name]]
             self.assertEqual(got, expected, project)
             self.assertEqual(level, "activity")
@@ -34,8 +34,19 @@ class MergeTests(unittest.TestCase):
         self.assertEqual(config.merge_layers([{"level": "full"}, {"level": "bogus"}])[1], "full")
         self.assertEqual(config.merge_layers([{}])[1], "activity")
 
+    def test_tuning_numbers_are_read_and_validated(self):
+        _, _, tuning = config.merge_layers([{"flood_burst": 50, "flood_interval": 0.05, "queue_limit": 0}])
+        self.assertEqual(tuning, {"flood_burst": 50, "flood_interval": 0.05, "queue_limit": 0})
+        _, _, tuning = config.merge_layers([{"flood_burst": 50}, {"flood_burst": 9}])
+        self.assertEqual(tuning, {"flood_burst": 9})
+
+    def test_tuning_nonsense_is_ignored(self):
+        _, _, tuning = config.merge_layers([{"flood_burst": "many", "flood_interval": -1,
+                                             "queue_limit": -5, "level": True}])
+        self.assertEqual(tuning, {})
+
     def test_ignores_junk(self):
-        lists, _ = config.merge_layers([{"channels": "notalist", "Channels": [], "x_channels_y": [], "foo": 1},
+        lists, _, _ = config.merge_layers([{"channels": "notalist", "Channels": [], "x_channels_y": [], "foo": 1},
                                         None, {"team_channels": [A + "#t", 5]}])
         self.assertEqual(lists, {"team_channels": [A + "#t"]})
 
@@ -129,6 +140,12 @@ class LoadConfigTests(unittest.TestCase):
         self.assertEqual(targets(cfg), [("a.example", "#agents")])
         self.assertEqual(cfg.level, "activity")
         self.assertTrue(any("not trusted" in l for l in logs))
+
+
+class TuningDefaultTests(unittest.TestCase):
+    def test_defaults_match_the_connection(self):
+        cfg = config.Config([], "activity")
+        self.assertEqual((cfg.flood_burst, cfg.flood_interval, cfg.queue_limit), (4, 2.0, 500))
 
 
 if __name__ == "__main__":

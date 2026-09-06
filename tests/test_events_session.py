@@ -63,6 +63,42 @@ class SessionCoreTests(unittest.TestCase):
                           "model": "gpt-5.6-sol", "prompt": "x"})
         self.assertEqual(lines[0], "▶ session 01a06850 · codex gpt-5.6-sol · ~/dev/simpici")
 
+    def test_model_is_announced_once_the_transcript_names_it(self):
+        """UserPromptSubmit fires before the first assistant record exists, so the
+        session line cannot carry the model; it goes out on its own line instead."""
+        lines = self.s.handle(self.base(event="UserPromptSubmit", prompt="hi"))
+        self.assertEqual(lines, ["▶ session e873ddde · claude · ~/dev/agent-irc", "» hi"])
+        self.append(assistant("r0", {"input_tokens": 1000, "output_tokens": 20}))
+        self.assertEqual(self.s.handle(self.base(event="PreToolUse", tool_name="Bash", tool_use_id="t1",
+                                                 tool_input={"command": "ls"})),
+                         ["⇄ model claude-fable-5-1"])
+        self.assertEqual(self.s.model, "claude-fable-5-1")
+        self.assertEqual(self.s.handle(self.base(event="PreToolUse", tool_name="Bash", tool_use_id="t2",
+                                                 tool_input={"command": "ls"})), [])
+
+    def test_the_model_peek_leaves_the_turn_usage_alone(self):
+        self.s.handle(self.base(event="UserPromptSubmit", prompt="hi"))
+        self.append(assistant("r0", {"input_tokens": 1000, "output_tokens": 20}))
+        self.s.handle(self.base(event="PreToolUse", tool_name="Bash", tool_use_id="t1",
+                                tool_input={"command": "ls"}))
+        self.assertEqual(self.s.handle(self.base(event="Stop")),
+                         ["✔ turn · 0.0s · 0 tools · 1k in / 20 out · claude-fable-5-1"])
+
+    def test_no_model_line_when_the_session_line_already_had_it(self):
+        self.append(assistant("r0", {"input_tokens": 1, "output_tokens": 1}))
+        lines = self.s.handle(self.base(event="UserPromptSubmit", prompt="hi"))
+        self.assertEqual(lines[0], "▶ session e873ddde · claude claude-fable-5-1 · ~/dev/agent-irc")
+        self.assertEqual(self.s.handle(self.base(event="PreToolUse", tool_name="Bash", tool_use_id="t1",
+                                                 tool_input={"command": "ls"})), [])
+
+    def test_no_model_line_when_the_turn_line_carries_it(self):
+        self.s.handle(self.base(event="UserPromptSubmit", prompt="hi"))
+        self.append(assistant("r0", {"input_tokens": 1, "output_tokens": 1}))
+        lines = self.s.handle(self.base(event="Stop"))
+        self.assertEqual(lines, ["✔ turn · 0.0s · 0 tools · 1 in / 1 out · claude-fable-5-1"])
+        self.assertEqual(self.s.handle(self.base(event="PreToolUse", tool_name="Bash", tool_use_id="t1",
+                                                 tool_input={"command": "ls"})), [])
+
     def test_no_session_line_without_session_id(self):
         self.assertEqual(self.s.handle({"event": "PreToolUse", "tool_name": "Bash"}), [])
 
@@ -145,30 +181,46 @@ class SessionCoreTests(unittest.TestCase):
     def test_full_level_sends_prompt_and_answer_text(self):
         s = Session("claude", "full", CWD, HOME, clock=self.clock)
         lines = s.handle(self.base(event="UserPromptSubmit", prompt="first line\n\nsecond paragraph"))
-        self.assertEqual(lines[1:], ["» first line", "  first line", "  second paragraph"])
+        self.assertEqual(lines[1:], ["» first line", "  second paragraph"])
         lines = s.handle(self.base(event="Stop", last_assistant_message="All done.\nBye."))
         self.assertEqual(lines[1:], ["  All done.", "  Bye."])
 
-    def test_full_level_lines_fit_within_max_payload(self):
-        # A 400-byte ASCII paragraph, prefixed with "  ", must never exceed
-        # MAX_PAYLOAD (400 bytes) once sent -- splitting at MAX_PAYLOAD
-        # itself (the pre-fix bug) leaves no room for the two-byte prefix,
-        # so cut_bytes() on send silently drops the line's last two bytes.
-        from agent_irc.irc import MAX_PAYLOAD
+    def test_full_level_sends_the_whole_multiline_command(self):
         s = Session("claude", "full", CWD, HOME, clock=self.clock)
-        paragraph = "x" * 400
-        # lines[0] is the session-start line, lines[1] the "» " prompt
-        # summary; the split body -- what this test is about -- follows.
-        lines = s.handle(self.base(event="UserPromptSubmit", prompt=paragraph))
-        self.assertEqual(lines[2:], ["  " + "x" * 398, "  " + "x" * 2])
-        for line in lines[1:]:
-            self.assertLessEqual(len(line.encode("utf-8")), MAX_PAYLOAD)
+        s.handle(self.base(event="UserPromptSubmit", prompt="go"))
+        cmd = "cat > x <<'EOF'\nhello\nEOF"
+        s.handle(self.base(event="PreToolUse", tool_name="Bash", tool_use_id="t1", tool_input={"command": cmd}))
+        self.assertEqual(s.handle(self.base(event="PostToolUse", tool_name="Bash", tool_use_id="t1",
+                                            tool_input={"command": cmd})),
+                         ["⚙ Bash 0.0s: cat > x <<'EOF' [+2 lines]",
+                          "  command:", "    cat > x <<'EOF'", "    hello", "    EOF"])
 
-        # lines[0] is the turn summary; the rest is the split body.
+    def test_single_line_command_has_no_body_at_full_level(self):
+        s = Session("claude", "full", CWD, HOME, clock=self.clock)
+        s.handle(self.base(event="UserPromptSubmit", prompt="go"))
+        self.assertEqual(s.handle(self.base(event="PostToolUse", tool_name="Bash", tool_use_id="t1",
+                                            tool_input={"command": "ls -la"})),
+                         ["⚙ Bash: ls -la"])
+
+    def test_activity_level_keeps_the_command_on_one_line(self):
+        self.s.handle(self.base(event="UserPromptSubmit", prompt="go"))
+        self.assertEqual(self.s.handle(self.base(event="PostToolUse", tool_name="Bash", tool_use_id="t1",
+                                                 tool_input={"command": "a\nb"})),
+                         ["⚙ Bash: a b [+1 line]"])
+
+    def test_full_level_body_lines_are_logical_lines(self):
+        # Fitting a line to a server is the connection's job: it is the only
+        # thing that knows that server's LINELEN and the ":nick!user@host "
+        # the server puts in front of what we send. A session that split at a
+        # guessed 400 bytes would cap every server at the guess.
+        s = Session("claude", "full", CWD, HOME, clock=self.clock)
+        paragraph = "x" * 900
+        # lines[0] is the session-start line, lines[1] the "» " prompt summary,
+        # lines[2] the body -- the second prompt line, kept as one logical line.
+        lines = s.handle(self.base(event="UserPromptSubmit", prompt="head\n" + paragraph))
+        self.assertEqual(lines[2:], ["  " + paragraph])
         lines = s.handle(self.base(event="Stop", last_assistant_message=paragraph))
-        self.assertEqual(lines[1:], ["  " + "x" * 398, "  " + "x" * 2])
-        for line in lines:
-            self.assertLessEqual(len(line.encode("utf-8")), MAX_PAYLOAD)
+        self.assertEqual(lines[1:], ["  " + paragraph])
 
     def test_subactivity_does_not_send_texts(self):
         s = Session("claude", "subactivity", CWD, HOME, clock=self.clock)

@@ -80,15 +80,54 @@ class ConnectionTests(unittest.TestCase):
         self.assertTrue(fake.wait_for(lambda ls: "JOIN #a" in ls))
         self.assertFalse(any(l.startswith("PASS") for l in fake.lines()))
 
-    def test_long_payload_is_cut(self):
+    def privmsgs(self, fake, channel="#a"):
+        head = "PRIVMSG %s :" % channel
+        return [l[len(head):] for l in fake.lines() if l.startswith(head)]
+
+    def test_long_payload_is_split_to_fit_the_line_the_receiver_gets(self):
+        """Nothing is cut: the server's own ":nick!user@host " goes in front of
+        what we send, and the whole of that has to fit the 512-byte line."""
         fake = FakeIrcServer()
         self.addCleanup(fake.close)
         conn = self.connect(fake, channels=("#a",))
-        self.assertTrue(fake.wait_for(lambda ls: "JOIN #a" in ls))
+        self.assertTrue(wait_until(lambda: conn.mask))  # learned from the echoed JOIN
+        self.assertEqual(conn.mask, "agent-irc-1!u@h")
+        self.assertEqual(conn.payload_limit("#a"), 512 - len(":agent-irc-1!u@h PRIVMSG #a :") - 2)
         conn.send_message("ä" * 300)
-        self.assertTrue(fake.wait_for(lambda ls: any(l.startswith("PRIVMSG #a :ä") for l in ls)))
-        line = [l for l in fake.lines() if l.startswith("PRIVMSG #a :")][0]
-        self.assertEqual(line, "PRIVMSG #a :" + "ä" * 200)
+        self.assertTrue(wait_until(lambda: len(self.privmsgs(fake)) == 2))
+        parts = self.privmsgs(fake)
+        self.assertEqual("".join(parts), "ä" * 300)
+        for part in parts:
+            self.assertLessEqual(len(part.encode("utf-8")), conn.payload_limit("#a"))
+
+    def test_isupport_linelen_is_used(self):
+        fake = FakeIrcServer(isupport=("LINELEN=1024",))
+        self.addCleanup(fake.close)
+        conn = self.connect(fake, channels=("#a",))
+        self.assertTrue(wait_until(lambda: conn.mask))
+        self.assertEqual(conn.linelen, 1024)
+        conn.send_message("ä" * 300)
+        self.assertTrue(wait_until(lambda: self.privmsgs(fake)))
+        self.assertEqual(self.privmsgs(fake), ["ä" * 300])  # 600 bytes, one line
+
+    def test_nonsense_linelen_is_ignored(self):
+        fake = FakeIrcServer(isupport=("LINELEN=12", "CHANTYPES=#"))
+        self.addCleanup(fake.close)
+        conn = self.connect(fake, channels=("#a",))
+        self.assertTrue(wait_until(lambda: conn.registered and conn.isupport))
+        self.assertEqual(conn.linelen, 512)
+        self.assertEqual(conn.isupport["CHANTYPES"], "#")
+
+    def test_continuation_keeps_the_body_indent(self):
+        fake = FakeIrcServer(isupport=("LINELEN=140",))
+        self.addCleanup(fake.close)
+        conn = self.connect(fake, channels=("#a",))
+        self.assertTrue(wait_until(lambda: conn.mask))
+        conn.send_message("  " + " ".join(["word"] * 40))
+        self.assertTrue(wait_until(lambda: len(self.privmsgs(fake)) >= 2))
+        for part in self.privmsgs(fake):
+            self.assertTrue(part.startswith("  "), part)
+            self.assertLessEqual(len(part.encode("utf-8")), conn.payload_limit("#a"))
 
     def test_messages_before_registration_are_delivered_after(self):
         fake = FakeIrcServer()

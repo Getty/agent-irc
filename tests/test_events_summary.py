@@ -26,10 +26,26 @@ class ToolSummaryTests(unittest.TestCase):
         return tool_summary(name, inp, CWD, HOME)
 
     def test_shell(self):
-        self.assertEqual(self.s("Bash", {"command": "ls -la\nfind ."}), "ls -la")
+        self.assertEqual(self.s("Bash", {"command": "ls -la\nfind ."}), "ls -la find . [+1 line]")
         self.assertEqual(self.s("shell", {"command": ["bash", "-lc", "make test"]}), "bash -lc make test")
         self.assertEqual(self.s("exec_command", {"cmd": "pwd"}), "pwd")
         self.assertEqual(len(self.s("Bash", {"command": "x" * 300})), 120)
+
+    def test_multiline_shell_keeps_every_line(self):
+        """A newline is not the end of the command: collapse it, do not cut there."""
+        script = 'python3 -c "\nimport json\nprint(json.dumps({}))\n"'
+        self.assertEqual(self.s("Bash", {"command": script}),
+                         'python3 -c " import json print(json.dumps({})) " [+3 lines]')
+        heredoc = "cat > x <<'EOF'\nhello\nEOF"
+        self.assertEqual(self.s("Bash", {"command": heredoc}), "cat > x <<'EOF' hello EOF [+2 lines]")
+        self.assertEqual(self.s("Bash", {"command": "a\nb"}), "a b [+1 line]")
+        self.assertEqual(self.s("Bash", {"command": "ls\n\n"}), "ls")
+        long_script = "head\n" + "x" * 300
+        summary = self.s("Bash", {"command": long_script})
+        self.assertTrue(summary.startswith("head x"), summary)
+        self.assertTrue(summary.endswith("… [+1 line]"), summary)
+        self.assertEqual(self.s("Agent", {"subagent_type": "Explore", "description": "find\nthe hooks"}),
+                         "Explore: find the hooks")
 
     def test_files(self):
         self.assertEqual(self.s("Read", {"file_path": CWD + "/hooks/hooks.json"}), "hooks/hooks.json")
@@ -61,7 +77,7 @@ class ToolSummaryTests(unittest.TestCase):
         self.assertEqual(self.s("mcp__context7__query-docs", {"libraryId": "/x/y", "n": 3}), "/x/y")
         self.assertEqual(self.s("TodoWrite", {"todos": [1, 2]}), "")
         self.assertEqual(self.s("Unknown", None), "")
-        self.assertEqual(self.s("Unknown", "raw text\nmore"), "raw text")
+        self.assertEqual(self.s("Unknown", "raw text\nmore"), "raw text more")
 
 
 class GlyphTests(unittest.TestCase):

@@ -11,7 +11,7 @@ import time
 from agent_irc import __version__, mcp
 from agent_irc.config import load_config
 from agent_irc.events import Session
-from agent_irc.irc import IrcConnection
+from agent_irc.irc import FloodBucket, IrcConnection
 from agent_irc.text import nick_base
 
 
@@ -135,7 +135,10 @@ class App:
             return
         realname = "%s %s %s" % (self.harness, session_id, cwd)
         for server, channels in by_server.items():
-            connection = self.connection_factory(server, channels, nick_base(cwd), realname, self.log)
+            connection = self.connection_factory(
+                server, channels, nick_base(cwd), realname, self.log,
+                bucket=FloodBucket(burst=config.flood_burst, interval=config.flood_interval),
+                queue_limit=config.queue_limit)
             connection.start()
             self.connections.append(connection)
             self.log("agent-irc: connecting to %s for %s" % (server.label, " ".join(channels)))

@@ -8,6 +8,10 @@ from typing import Optional
 
 from agent_irc.text import fmt_tokens
 
+# A transcript grows without bound; the model is named in every assistant record,
+# so the tail is always enough to find it.
+PEEK_BYTES = 256 * 1024
+
 
 @dataclass
 class Usage:
@@ -56,6 +60,18 @@ def _span(records):
     return max(stamps) - min(stamps)
 
 
+def _parse(data):
+    out = []
+    for line in data.split(b"\n"):
+        if not line.strip():
+            continue
+        try:
+            out.append(json.loads(line.decode("utf-8")))
+        except ValueError:
+            continue
+    return out
+
+
 class _Tail:
     """Yields the complete JSON lines appended to a file since the previous call."""
 
@@ -76,15 +92,27 @@ class _Tail:
         if end < 0:
             return []
         self.offset += end + 1
-        out = []
-        for line in data[:end].split(b"\n"):
-            if not line.strip():
-                continue
-            try:
-                out.append(json.loads(line.decode("utf-8")))
-            except ValueError:
-                continue
-        return out
+        return _parse(data[:end])
+
+    def peek(self):
+        """The last PEEK_BYTES worth of complete records, without moving the offset.
+
+        The turn totals are read once, at Stop, by records(); anything that wants
+        to look at the transcript earlier -- the model, which the hook payload of
+        neither harness carries -- has to leave that read untouched.
+        """
+        try:
+            with open(self.path, "rb") as f:
+                start = max(0, os.fstat(f.fileno()).st_size - PEEK_BYTES)
+                f.seek(start)
+                data = f.read()
+        except OSError:
+            return []
+        if start:  # the first line is a fragment of the record we cut into
+            head = data.find(b"\n")
+            data = data[head + 1:] if head >= 0 else b""
+        end = data.rfind(b"\n")
+        return _parse(data[:end]) if end >= 0 else []
 
 
 def _int(value):
@@ -125,6 +153,9 @@ def _claude_usage(records):
 class ClaudeTranscript(_Tail):
     def read_new(self):
         return _claude_usage(self.records())
+
+    def peek_model(self):
+        return _claude_usage(self.peek()).model
 
     @classmethod
     def read_whole(cls, path):
@@ -170,6 +201,9 @@ def _codex_scan(records, turn_id, key):
 
 
 class CodexTranscript(_Tail):
+    def peek_model(self):
+        return _codex_scan(self.peek(), None, "turn_token_usage").model
+
     def read_turn(self, turn_id):
         """Usage of one turn from the records appended since the previous read.
 

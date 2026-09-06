@@ -106,11 +106,72 @@ so a cloned repository cannot redirect your sessions.
 
 | `level` | sends |
 |---|---|
-| `activity` (default) | session start/end, first line of each prompt, tool calls with duration, subagent start/stop with duration and tokens, turn end with duration and tokens, permission requests, failures, compaction, model switches |
+| `activity` (default) | session start/end, first line of each prompt, tool calls with duration, subagent start/stop with duration and tokens, turn end with duration and tokens, permission requests, failures, compaction, the model as soon as the session knows it, model switches |
 | `subactivity` | plus the tool calls inside subagents, prefixed with the subagent's id |
-| `full` | plus the full prompt and the full final answer of every turn |
+| `full` | plus the full prompt, the full final answer of every turn, and the complete input of every tool call -- every field, every line, nothing shortened |
 
 Tool outputs are never sent.
+
+When a background agent stops, the harness wakes the session with a
+`<task-notification>` block as the prompt. Rather than relay the raw XML, the
+plugin folds it into one line -- `↩ agent "..." completed` -- and at `full`
+puts the agent's own result (or, for a stopped agent, the reason it gives)
+underneath.
+
+At `activity` and `subactivity` a tool call is one line, so a long or
+multi-line input is folded into spaces and cut at 120 characters. At `full`
+that line keeps its first line whole and the input follows underneath, field
+by field:
+
+```
+<agent-irc-1> ⚙ Write 0.3s: agent_irc/events.py [+812 lines]
+<agent-irc-1>   file_path: /home/getty/dev/agent-irc/agent_irc/events.py
+<agent-irc-1>   content:
+<agent-irc-1>     """Turn hook events into IRC lines (spec §8)."""
+<agent-irc-1>     …
+```
+
+A body that would only repeat its head line is left out, so a plain
+`Read` or a one-line `Bash` still costs a single line.
+
+### Sending rate
+
+`full` can mean thousands of lines from one tool call, which the defaults --
+sized for a public server -- will not deliver: they send one line every two
+seconds and drop everything past 500 queued. On your own ircd, raise them.
+
+| key | default | means |
+|---|---|---|
+| `flood_burst` | `4` | lines that may go out back to back |
+| `flood_interval` | `2.0` | seconds per line after that |
+| `queue_limit` | `500` | lines that may wait; `0` never drops |
+
+```json
+{
+  "agent-irc": {
+    "channels": ["ircs://getty:${IRCD_PASSWORD}@irc.example.org:6697/#agents"],
+    "level": "full",
+    "flood_burst": 200,
+    "flood_interval": 0.05,
+    "queue_limit": 0
+  }
+}
+```
+
+A line longer than the server takes is split across as many `PRIVMSG`s as it
+needs, never truncated; servers that advertise `LINELEN` (8192 is common) are
+taken at their word, so on those there is far less splitting to do.
+
+### Clients and server
+
+Any IRC client works, but two are easy to recommend: [Halloy](https://halloy.chat)
+(modern, cross-platform, and comfortable with long lines) and, on Windows, the
+classic [mIRC](https://www.mirc.com). For your own ircd, [ergo](https://ergo.chat)
+is the one this plugin is developed against: a single self-contained binary that
+advertises a large `LINELEN` (8192), so a `full`-level line -- a whole file, a
+long answer -- is split into far fewer messages than a stock 512-byte server
+would need. Running your own also lets you raise the sending rate (see above)
+without antagonising a public server.
 
 **Codex 0.153 limitations:** no `⇢`/`⇠` subagent start/stop lines at any
 level (Codex never delivers the hooks for them); a Codex subagent's own tool

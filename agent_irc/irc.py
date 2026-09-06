@@ -8,9 +8,17 @@ import ssl
 import threading
 import time
 
-from agent_irc.text import cut_bytes
+from agent_irc.text import cut_bytes, wrap_payload
 
-MAX_PAYLOAD = 400
+# RFC 1459: the whole line, CRLF included, must fit 512 bytes -- and the line
+# the receiver has to fit is not the one we send: the server prepends our own
+# ":nick!user@host " to it. Servers that allow more advertise LINELEN in their
+# RPL_ISUPPORT (005); ergo and InspIRCd both do.
+LINELEN = 512
+MIN_PAYLOAD = 80  # a server claiming less room than this is not believed
+# "!ident@host" at the RFC's worst case, used until the server has shown us the
+# mask it actually puts in front of our messages.
+UNKNOWN_USERHOST = 75
 QUEUE_LIMIT = 500
 BACKOFF = (5, 10, 20, 40, 60)
 REGISTRATION_TIMEOUT = 30.0
@@ -69,7 +77,7 @@ class IrcConnection(threading.Thread):
     """One IRC server: connects, registers, joins channels, delivers queued lines."""
 
     def __init__(self, server, channels, nick_base, realname, log, wait=None,
-                 clock=time.monotonic, bucket=None):
+                 clock=time.monotonic, bucket=None, queue_limit=QUEUE_LIMIT):
         super().__init__(daemon=True, name="irc-" + server.label)
         self.server = server
         self.channels = list(channels)
@@ -83,6 +91,7 @@ class IrcConnection(threading.Thread):
         self.quit_message = "bye"
         self.lock = threading.Lock()
         self.queue = collections.deque()
+        self.queue_limit = queue_limit
         self.dropped = 0
         self.attempts = 0
         self.sock = None
@@ -91,13 +100,17 @@ class IrcConnection(threading.Thread):
         self.nick_try = 1
         self.nick_limit = NICK_LIMITS[0]
         self.registered = False
+        self.mask = None
+        self.isupport = {}
+        self.linelen = LINELEN
+        self.pending = []
 
     # -- public -------------------------------------------------------------
 
     def send_message(self, text):
         with self.lock:
             for channel in self.channels:
-                if len(self.queue) >= QUEUE_LIMIT:
+                if self.queue_limit and len(self.queue) >= self.queue_limit:
                     self.queue.popleft()
                     self.dropped += 1
                 self.queue.append((channel, text))
@@ -156,6 +169,14 @@ class IrcConnection(threading.Thread):
         self.registered = False
         self.nick_try = 1
         self.nick_limit = NICK_LIMITS[0]
+        self.mask = None
+        self.isupport = {}
+        self.linelen = LINELEN
+        with self.lock:
+            # Chunks cut to the old connection's budget go back to the queue:
+            # this server may answer with a different LINELEN than the last one.
+            self.queue.extendleft(reversed(self.pending))
+            self.pending = []
         if self.server.password:
             self._raw("PASS :" + self.server.password)
         self._send_nick()
@@ -215,26 +236,38 @@ class IrcConnection(threading.Thread):
     def _drain(self, deadline):
         while self.registered and self.clock() < deadline:
             with self.lock:
-                if not self.queue:
+                if not self.queue and not self.pending:
                     return
             delay = self._pump()
             if delay > 0:
                 self._read(min(delay, max(deadline - self.clock(), 0.0)))
 
     def _pump(self):
-        """Send queued lines as the bucket allows; return the delay until the next may go."""
+        """Send queued lines as the bucket allows; return the delay until the next may go.
+
+        A queued line is one logical line; what goes on the wire is however many
+        PRIVMSGs this server's line budget needs for it, each costing its own
+        token from the flood bucket.
+        """
         while True:
             with self.lock:
-                if not self.queue:
-                    return 0.0
-                channel, text = self.queue[0]
+                if not self.pending:
+                    if not self.queue:
+                        return 0.0
+                    channel, text = self.queue.popleft()
+                    self.pending = [(channel, part)
+                                    for part in wrap_payload(text, self.payload_limit(channel))]
+                    if not self.pending:
+                        continue
             delay = self.bucket.acquire_delay()
             if delay > 0:
                 return delay
             with self.lock:
-                self.queue.popleft()
-                dropped, self.dropped = self.dropped, 0
-            self._raw("PRIVMSG %s :%s" % (channel, cut_bytes(text, MAX_PAYLOAD)))
+                channel, part = self.pending.pop(0)
+                dropped = 0
+                if not self.pending:
+                    dropped, self.dropped = self.dropped, 0
+            self._raw("PRIVMSG %s :%s" % (channel, part))
             if dropped:
                 self.send_message("… dropped %d lines" % dropped)
 
@@ -255,8 +288,46 @@ class IrcConnection(threading.Thread):
             line, _, self.buffer = self.buffer.partition(b"\n")
             self._dispatch(line.rstrip(b"\r").decode("utf-8", errors="replace"))
 
+    def payload_limit(self, channel):
+        """Bytes of text this server relays to `channel` in one PRIVMSG.
+
+        What has to fit is not the line we send but the one the receiver gets:
+        the server prepends `:nick!user@host ` to it. We learn that mask from
+        the JOIN the server echoes back to us and budget for the RFC's worst
+        case until it arrives.
+        """
+        mask = self.mask or (self.nick or "") + "!" + "u" * UNKNOWN_USERHOST
+        head = ":%s PRIVMSG %s :" % (mask, channel)
+        return max(self.linelen - len(head.encode("utf-8")) - 2, MIN_PAYLOAD)
+
+    def _note_isupport(self, tokens):
+        """RPL_ISUPPORT: `TOKEN=value` or `TOKEN`, `-TOKEN` to take one back.
+
+        The numeric ends in a human sentence ("are supported by this server")
+        and begins with our own nick; neither is a token, and the sentence is
+        the only part with spaces in it.
+        """
+        for token in tokens:
+            if not token or " " in token:
+                continue
+            name, _, value = token.partition("=")
+            if name.startswith("-"):
+                self.isupport.pop(name[1:].upper(), None)
+            else:
+                self.isupport[name.upper()] = value
+        self.linelen = self._advertised("LINELEN", LINELEN, low=128, high=65535)
+
+    def _advertised(self, name, fallback, low, high):
+        try:
+            value = int(self.isupport.get(name, ""))
+        except ValueError:
+            return fallback
+        return value if low <= value <= high else fallback
+
     def _dispatch(self, line):
         prefix, command, params = parse_line(line)
+        if prefix and self.nick and prefix.split("!", 1)[0] == self.nick and "@" in prefix:
+            self.mask = prefix  # our own JOIN, echoed back with the prefix the server uses
         if command == "PING":
             self._raw("PONG :" + (params[-1] if params else ""))
         elif command == "001":
@@ -265,6 +336,8 @@ class IrcConnection(threading.Thread):
             self.log("agent-irc: %s: registered as %s" % (self.server.label, self.nick))
             for channel in self.channels:
                 self._raw("JOIN " + channel)
+        elif command == "005":
+            self._note_isupport(params[1:])
         elif command == "433" and not self.registered:
             self.nick_try += 1
             if self.nick_try > MAX_NICK_TRIES:
@@ -278,13 +351,15 @@ class IrcConnection(threading.Thread):
                 raise GiveUp("nick rejected: " + line)
         elif command == "NICK" and prefix and prefix.split("!")[0] == self.nick and params:
             self.nick = params[-1]
+            if self.mask:
+                self.mask = self.nick + "!" + self.mask.split("!", 1)[-1]
         elif command == "ERROR":
             raise ConnectionError(line)
 
     def _raw(self, line):
         line = line.replace("\r", " ").replace("\n", " ")
         line = _CONTROL_RE.sub("", line)
-        data = line.encode("utf-8") + b"\r\n"
+        data = cut_bytes(line, self.linelen - 2).encode("utf-8") + b"\r\n"
         self.sock.sendall(data)
 
     def _close_socket(self):

@@ -1,6 +1,9 @@
 import unittest
 
-from agent_irc.irc import FloodBucket, nick_candidate, parse_line
+from agent_irc import irc
+from agent_irc.config import Server
+from agent_irc.irc import (LINELEN, FloodBucket, IrcConnection, nick_candidate,
+                           parse_line)
 
 
 class Clock:
@@ -62,6 +65,68 @@ class NickCandidateTests(unittest.TestCase):
         self.assertEqual(nick_candidate("agent-irc", 1, 9), "agent-i-1")
         self.assertEqual(nick_candidate("a-very-long-project-name-indeed-x", 7, 30), "a-very-long-project-name-ind-7")
         self.assertEqual(nick_candidate("abc", 1, 2), "a-1")
+
+
+class IsupportTests(unittest.TestCase):
+    def conn(self):
+        c = IrcConnection(Server("irc", "h", 6667, "u", None, False), ["#a"], "agent-irc", "rn", lambda m: None)
+        c.nick = "agent-irc-1"
+        return c
+
+    def test_tokens_values_and_negation(self):
+        c = self.conn()
+        c._note_isupport(["agent-irc-1", "LINELEN=1024", "SAFELIST", "NICKLEN=32",
+                          "are supported by this server"][1:])
+        self.assertEqual(c.isupport, {"LINELEN": "1024", "SAFELIST": "", "NICKLEN": "32"})
+        self.assertEqual(c.linelen, 1024)
+        c._note_isupport(["-LINELEN"])
+        self.assertNotIn("LINELEN", c.isupport)
+        self.assertEqual(c.linelen, LINELEN)
+
+    def test_implausible_linelen_falls_back(self):
+        c = self.conn()
+        for value in ("12", "0", "-5", "999999", "lots", ""):
+            c._note_isupport(["LINELEN=" + value])
+            self.assertEqual(c.linelen, LINELEN, value)
+
+    def test_payload_limit_shrinks_with_the_mask_and_the_channel(self):
+        c = self.conn()
+        before = c.payload_limit("#a")
+        c.mask = "agent-irc-1!~getty@10.20.23.1"
+        self.assertEqual(c.payload_limit("#a"), 512 - len(":agent-irc-1!~getty@10.20.23.1 PRIVMSG #a :") - 2)
+        self.assertGreater(c.payload_limit("#a"), before)  # the guess is the pessimistic one
+        self.assertEqual(c.payload_limit("#a") - c.payload_limit("#agents"), len("gents"))
+
+    def test_payload_limit_never_goes_below_the_floor(self):
+        c = self.conn()
+        c.linelen = 128
+        self.assertEqual(c.payload_limit("#" + "x" * 60), 80)
+
+
+class QueueLimitTests(unittest.TestCase):
+    def conn(self, **kw):
+        return IrcConnection(Server("irc", "h", 6667, "u", None, False), ["#a"], "agent-irc", "rn",
+                             lambda m: None, **kw)
+
+    def test_the_default_cap_drops_the_oldest(self):
+        c = self.conn()
+        for i in range(irc.QUEUE_LIMIT + 3):
+            c.send_message("m%d" % i)
+        self.assertEqual((len(c.queue), c.dropped), (irc.QUEUE_LIMIT, 3))
+
+    def test_zero_means_no_cap(self):
+        """At level full one Write can be thousands of lines -- a cap would drop
+        exactly the part that makes full full."""
+        c = self.conn(queue_limit=0)
+        for i in range(irc.QUEUE_LIMIT + 300):
+            c.send_message("m%d" % i)
+        self.assertEqual((len(c.queue), c.dropped), (irc.QUEUE_LIMIT + 300, 0))
+
+    def test_an_explicit_cap_is_honoured(self):
+        c = self.conn(queue_limit=10)
+        for i in range(13):
+            c.send_message("m%d" % i)
+        self.assertEqual((len(c.queue), c.dropped), (10, 3))
 
 
 if __name__ == "__main__":

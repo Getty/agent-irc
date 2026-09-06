@@ -71,5 +71,37 @@ class TextTests(unittest.TestCase):
         self.assertEqual(text.nick_base("/home/g/dev/___"), "agent")
 
 
+class SplitBlockTests(unittest.TestCase):
+    def test_keeps_indentation_and_expands_tabs(self):
+        block = "def f():\n    if x:\n\t\treturn 1\n\n"
+        self.assertEqual(text.split_block(block), ["def f():", "    if x:", "        return 1"])
+
+    def test_does_not_fit_lines_to_any_server(self):
+        self.assertEqual(text.split_block("x" * 900), ["x" * 900])
+
+    def test_empty(self):
+        self.assertEqual(text.split_block(""), [])
+        self.assertEqual(text.split_block(None), [])
+
+
+class WrapPayloadTests(unittest.TestCase):
+    def test_short_line_stays_whole(self):
+        self.assertEqual(text.wrap_payload("  hello world", 400), ["  hello world"])
+        self.assertEqual(text.wrap_payload("   ", 400), [])
+
+    def test_continuations_keep_the_indent(self):
+        self.assertEqual(text.wrap_payload("  aaa bbb ccc", 7), ["  aaa", "  bbb", "  ccc"])
+
+    def test_word_longer_than_the_budget_is_cut_on_a_character_boundary(self):
+        self.assertEqual(text.wrap_payload("ä" * 6, 4), ["ä" * 2] * 3)
+
+    def test_nothing_is_lost(self):
+        line = "  " + " ".join("word%d" % i for i in range(200))
+        chunks = text.wrap_payload(line, 60)
+        self.assertEqual(" ".join(c.strip() for c in chunks), line.strip())
+        for chunk in chunks:
+            self.assertLessEqual(len(chunk.encode("utf-8")), 60)
+
+
 if __name__ == "__main__":
     unittest.main()

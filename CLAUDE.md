@@ -49,6 +49,61 @@ distinct `requestId` or you count every response three times. Codex writes
 `token_usage_record` with `turn_token_usage` per `turn_id`; take the last one
 for the turn.
 
+**Claude Code hook payloads carry no `model` at all.** The base hook-input
+schema in `claude` 2.1.261 is `session_id`, `transcript_path`, `cwd` plus the
+optional `prompt_id`, `permission_mode`, `agent_id`, `agent_type` and `effort`
+— `model` is in none of them; only `PreModelSwitch`/`PostModelSwitch` carry
+`from_model`/`to_model` (read out of the 2.1.261 binary's own schemas,
+2026-09-05). `hooks/hooks.json`'s `"model": "${model}"` is therefore always an
+empty string there and always dropped by `clean()`; Codex, by contrast, does
+populate it. So on Claude Code the model can only come from the transcript —
+and a *fresh* session has no assistant record yet when the first
+`UserPromptSubmit` fires (measured on three real transcripts: the first record
+naming a model lands 6s later, with the first assistant message), which is why
+the `▶ session` line cannot name it. `Session._model_line` announces it as
+`⇄ model …` on the first event where the transcript does name it, which in
+practice is the first `PreToolUse` — the assistant message carrying the tool
+call is written before the tool runs. That read goes through
+`_Tail.peek()`/`peek_model()`, which reads only the last 256 KB and leaves the
+offset alone: the turn totals are read exactly once, at `Stop`, and a peek that
+consumed records would silently zero them.
+
+**The line we send is not the line that has to fit.** A server relays our
+`PRIVMSG #chan :text` as `:nick!user@host PRIVMSG #chan :text`, and it is
+*that* line the 512-byte RFC 1459 limit (or the server's advertised `LINELEN`)
+applies to. The sender therefore has to budget for a prefix it never writes.
+`IrcConnection.payload_limit()` does it exactly: `LINELEN` from `RPL_ISUPPORT`
+(005) when advertised, else 512, minus the mask, minus `PRIVMSG <channel> :`,
+minus CRLF. The mask is not guessable — it is read off the `JOIN` the server
+echoes back with our own prefix (`_dispatch` picks up any prefix whose nick is
+ours) — so until it arrives a worst-case 76 bytes is assumed. This is also why
+`events.py` must not split by bytes: only the connection knows its server's
+limit, so the formatter emits *logical* lines of any length and `_pump()`
+splits each into as many `PRIVMSG`s as that connection needs, one flood-bucket
+token each, indent preserved on continuations. Two things follow: `_drain()`
+has to check `pending` as well as `queue`, and a line is never truncated —
+`cut_bytes` survives only as a last-resort guard in `_raw()` for the lines we
+build ourselves (a long `QUIT` summary).
+
+**`full` shortens nothing, which moves the real limit to the sender.**
+`SUMMARY_LIMIT`/`PROMPT_LIMIT` apply below `full` only: there a tool call is
+one line, so the whole input has to be folded into it and cut. At `full`
+`Session.summary_limit` is `None`, `_head()` keeps the value's *first* line
+whole (folding an 800-line file into the head would send it twice), and
+`render_input()` puts the entire `tool_input` underneath -- every field, every
+line, for every tool, not just the shell ones `_command_body()` used to
+handle. A body of a single line is dropped: the head line already is that
+line. What then decides whether those lines arrive is the connection, and its
+defaults are sized for a public server: `FloodBucket(burst=4, interval=2.0)`
+releases one line every two seconds and `QUEUE_LIMIT = 500` drops the oldest
+beyond that, so a 600-line `Write` loses the first 107 lines and needs 20
+minutes. Hence `flood_burst`, `flood_interval` and `queue_limit` (0 = never
+drop) in the config, merged by `merge_layers` and handed to the connection by
+`App._connect`. Remove `queue_limit = 0` from
+`tests/test_end_to_end.py::test_full_level_sends_a_large_tool_input_whole`
+and it fails with `… dropped 107 lines` -- that is the whole point of the
+test.
+
 **SessionStart fires before MCP servers are connected**, in both harnesses.
 The server announces the session itself on the first event that carries a
 `session_id`, which is the first `UserPromptSubmit`.
@@ -189,6 +244,7 @@ never produced the evidence (noted why).
 | Item | Claude Code | Codex |
 |---|---|---|
 | `clientInfo.name` in `initialize` | `"claude-code"` (2026-09-05) | `"codex-mcp-client"` (2026-09-05); `detect_harness()` maps it to `"codex"` |
+| `model` in the hook payload | absent from every event's schema (2026-09-05); the model comes from the transcript instead | present, and `hooks/codex.json` whitelists it for every event (2026-09-05) |
 | `${tool_input}` substitution: object or string | string, JSON-encoded (`clean()` parses it) (2026-09-05) | same: a JSON-encoded string once inside the `mcp_tool` `input` template; confirmed by a correctly-formatted `⚙ Bash 0.1s: echo verify-ok` IRC line (2026-09-05) |
 | absent field: empty string or literal placeholder | empty string, never `${name}` (2026-09-05) | not independently confirmed — Codex's per-event field whitelist (see trap above) is a static, all-or-nothing check, not a per-instance one; no test exercised a field that's valid for an event but unpopulated in one particular instance of it (2026-09-05) |
 | `server` reference for the plugin MCP server in `mcp_tool` hooks | `plugin:agent-irc:irc` | must be the bare name from `.mcp.codex.json` (`"irc"`); the plugin-qualified form silently never calls `tools/call` (2026-09-05, see trap above) |

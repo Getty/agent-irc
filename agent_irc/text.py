@@ -15,6 +15,11 @@ def first_line(s):
     return ""
 
 
+def line_count(s):
+    """Lines with something on them -- what a reader would count."""
+    return sum(1 for line in str(s or "").splitlines() if line.strip())
+
+
 def truncate(s, limit):
     s = " ".join(str(s or "").split())
     if len(s) <= limit:
@@ -63,6 +68,35 @@ def split_message(text, max_bytes=400):
         if current:
             lines.append(current)
     return lines
+
+
+def split_block(text):
+    """Text whose line breaks and indentation mean something -- a command, not
+    prose -- as one output line per source line. Blank lines go, tabs become
+    spaces (the sender strips control characters, and a Makefile recipe without
+    its tab is a lie); fitting the line to the server is the sender's job."""
+    out = []
+    for line in str(text or "").split("\n"):
+        line = line.expandtabs(4).rstrip()
+        if line.strip():
+            out.append(line)
+    return out
+
+
+def wrap_payload(text, max_bytes):
+    """One logical line as the payload chunks one server will relay intact.
+
+    A continuation keeps the line's leading indent, so a wrapped body line
+    still reads as a body line rather than as a new event.
+    """
+    text = str(text or "").rstrip()
+    if not text.strip():
+        return []
+    if len(text.encode("utf-8")) <= max_bytes:
+        return [text]
+    indent = text[: len(text) - len(text.lstrip(" "))]
+    room = max(max_bytes - len(indent.encode("utf-8")), 1)
+    return [indent + part for part in split_message(text.strip(), room)]
 
 
 def short_path(path, cwd, home):

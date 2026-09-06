@@ -17,6 +17,7 @@ class FakeConnection:
 
     def __init__(self, server, channels, nick_base, realname, log, **kw):
         self.server, self.channels, self.nick_base, self.realname = server, channels, nick_base, realname
+        self.kw = kw
         self.messages, self.quit = [], None
         self.begin_close_calls = 0
         FakeConnection.instances.append(self)
@@ -225,6 +226,29 @@ class AppTests(unittest.TestCase):
         self.assertEqual(app.session.session_id, "s1")
         self.assertEqual(app.session.turns, 0)
         self.assertFalse(any("NoneType" in l for l in self.logs), self.logs)
+
+    def test_flood_and_queue_settings_reach_the_connection(self):
+        with open(os.path.join(self.home, ".claude", "settings.json"), "w") as f:
+            json.dump({"agent-irc": {"channels": [A + "#agents"], "level": "full",
+                                     "flood_burst": 50, "flood_interval": 0.05, "queue_limit": 0}}, f)
+        self.run_app([
+            rpc(1, "initialize", {"clientInfo": {"name": "claude-code"}}),
+            rpc(2, "tools/call", {"name": "event", "arguments": {"event": "UserPromptSubmit", "session_id": "s",
+                                                                 "cwd": self.cwd, "prompt": "x"}}),
+        ])
+        kw = FakeConnection.instances[0].kw
+        self.assertEqual(kw["queue_limit"], 0)
+        self.assertEqual((kw["bucket"].burst, kw["bucket"].interval), (50.0, 0.05))
+
+    def test_flood_and_queue_default_when_unconfigured(self):
+        self.run_app([
+            rpc(1, "initialize", {"clientInfo": {"name": "claude-code"}}),
+            rpc(2, "tools/call", {"name": "event", "arguments": {"event": "UserPromptSubmit", "session_id": "s",
+                                                                 "cwd": self.cwd, "prompt": "x"}}),
+        ])
+        kw = FakeConnection.instances[0].kw
+        self.assertEqual(kw["queue_limit"], 500)
+        self.assertEqual((kw["bucket"].burst, kw["bucket"].interval), (4.0, 2.0))
 
     def test_debug_logs_the_raw_event(self):
         debug = []

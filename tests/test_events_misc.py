@@ -40,7 +40,7 @@ class MiscEventTests(unittest.TestCase):
 
     def test_notification_only_idle(self):
         self.assertEqual(self.ev(event="Notification", notification_type="idle_prompt", message="m"),
-                         ["… waiting for input"])
+                         ["==== … WAITING FOR INPUT ===="])
         self.assertEqual(self.ev(event="Notification", notification_type="permission_prompt", message="m"), [])
 
     def test_interrupt_compact_model_switch(self):

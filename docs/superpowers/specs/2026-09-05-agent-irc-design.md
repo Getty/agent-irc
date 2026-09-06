@@ -329,9 +329,17 @@ both lists. The hook returns no decision on any event; `Stop`,
 - **Flood control:** token bucket per connection, burst 4 lines, then one
   line every 2 seconds. Every line goes as `PRIVMSG` to every channel of the
   connection, each copy counts against the bucket.
-- **Line length:** the message part of a `PRIVMSG` is at most 400 bytes of
-  UTF-8, cut at a character boundary; §8 says what gets truncated with `…`
-  and what gets split into several lines.
+- **Line length:** negotiated per connection, never guessed. What has to fit
+  is not the line the client sends but the one the server relays, with our own
+  `:nick!user@host ` in front of it: `LINELEN` from the server's `RPL_ISUPPORT`
+  (005) when it advertises one, else the RFC 1459 512 bytes, minus that prefix,
+  minus `PRIVMSG <channel> :`, minus the CRLF. The mask is read off the `JOIN`
+  the server echoes back to us; until it arrives the RFC's worst case
+  (`nick` + 76 bytes) is assumed, and a server advertising less than 80 bytes
+  of room is not believed. A queued line longer than the budget is **split**
+  into as many `PRIVMSG`s as it needs, at word boundaries, each keeping the
+  line's leading indent, each costing its own token from the flood bucket —
+  never cut. §8 says what gets shortened with `…` before it ever gets here.
 - **Quit:** `QUIT :<summary>` where the summary is
   `session ended · 1h12m · 8 turns · 412 tools · 1.2M in / 40k out`. On
   `SessionEnd` the reason is appended when the harness gives one.
@@ -341,7 +349,8 @@ both lists. The hook returns no decision on any event; `Stop`,
 Glyphs: `▶` session start · `■` session end / interrupt · `»` prompt ·
 `⚙` tool · `✖` failure · `⇢` subagent start · `⇠` subagent stop ·
 `✔` turn done · `⚠` permission · `…` idle / dropped · `⟲` compaction ·
-`⇄` model switch.
+`⇄` model (switch, or the model first becoming known) · `↩` background-agent
+task-notification.
 
 Numbers: durations as `1.2s`, `42s`, `3m12s`, `1h12m`; tokens as `31k`,
 `1.2M`; token line as `<in> in (<cached> cached) / <out> out`, the cached
@@ -352,7 +361,8 @@ part omitted when zero.
 | Event | Line |
 |---|---|
 | first event with `session_id` | `▶ session e873ddde · claude claude-fable-5-1 · ~/dev/agent-irc` — Codex payloads carry `model`; Claude's do not, so the model comes from the transcript's last assistant record and is omitted when there is none yet |
-| UserPromptSubmit | `» <first line of prompt, ≤ 200 chars>` |
+| model first known | `⇄ model claude-opus-5` — only when the session line went out without it: a fresh Claude session has no assistant record to read at announce time, so the model is announced on its own line as soon as the transcript names it, which is before the first tool line. Never repeated, and skipped when the `✔ turn` or `⇄ model … → …` line has already named it |
+| UserPromptSubmit | `» <first line of prompt, ≤ 200 chars>`; a prompt that is a harness-injected `<task-notification>` block renders instead as `↩ agent "<name>" <status>` (name from the summary, status from `<status>`), never as raw XML |
 | PreToolUse | nothing; records start time by `tool_use_id` |
 | PostToolUse | `⚙ Bash 1.2s: ls -la && find . -maxdepth 3` |
 | PostToolUseFailure (Claude) | `✖ Bash 0.3s: <summary> — <first line of error_message>` |
@@ -361,7 +371,7 @@ part omitted when zero.
 | Stop | `✔ turn · 3m12s · 24 tools · 210k in (190k cached) / 6k out · claude-fable-5-1` — duration from the `UserPromptSubmit` to the `Stop` on the server clock; tool count = completed tool calls without `agent_id` since that prompt, i.e. `PostToolUse` plus `PostToolUseFailure` events — a failed call is still a call, and Codex has no failure event to tell them apart |
 | StopFailure (Claude) | `✖ turn failed: rate_limit — <first line of error_message>` |
 | PermissionRequest | `⚠ permission: Bash: rm -rf build` |
-| Notification `idle_prompt` (Claude) | `… waiting for input` |
+| Notification `idle_prompt` (Claude) | `==== … WAITING FOR INPUT ====` — the only line that asks the reader for something, so it is ruled off and shouted; every other line is meant to be skimmed |
 | Interrupt (Codex) | `■ interrupted` |
 | PostCompact | `⟲ compacted (auto)` |
 | PostModelSwitch (Claude) | `⇄ model claude-fable-5-1 → claude-opus-5` |
@@ -373,7 +383,7 @@ characters:
 
 | tool | summary |
 |---|---|
-| Bash, shell, `Bash` on Codex | `command`, first line; a list command is joined with spaces |
+| Bash, shell, `Bash` on Codex | `command` with newlines folded to spaces (a heredoc or `python3 -c "…"` is one command, not its first line), plus ` [+N lines]` when it had more than one; a list command is joined with spaces |
 | Read, Edit, Write, MultiEdit, NotebookEdit | `file_path` relative to `cwd` |
 | Grep, Glob | `pattern`, plus `path` if given |
 | Agent | `<subagent_type>: <description>` |
@@ -382,6 +392,9 @@ characters:
 | apply_patch (Codex) | file names from `*** Update File:` / `*** Add File:` / `*** Delete File:` headers |
 | `mcp__…` tools | the part after the last `__`, plus the first string argument |
 | anything else | the first string-valued argument, or nothing |
+
+Every summary is folded to one line before it is cut, so nothing is lost at the
+first newline -- only at the 120-character mark.
 
 Paths under the home directory are shown with `~`.
 
@@ -415,11 +428,22 @@ subagents carry their own id; the nesting is not drawn.
 
 Everything from `subactivity`, plus:
 
-- the **full prompt** after the `»` line, split into `PRIVMSG` lines of at
-  most 400 bytes at word boundaries, paragraph breaks preserved as line
-  breaks, each line prefixed with `  `;
+- the **full prompt** after the `»` line, one line per source line *from the
+  second on* — the first line already is the `»` head, so a one-line prompt
+  adds no body and is never sent twice — blank lines dropped, indentation kept
+  and tabs expanded to spaces, each line prefixed with `  `; a task-notification
+  prompt instead puts the agent's `<result>` (or a stopped agent's summary)
+  under the `↩` head the same way;
 - the **full final answer** (`last_assistant_message`) after the `✔` line,
-  same splitting, each line prefixed with `  `.
+  the same way;
+- the **full command** of a multi-line shell tool call after its `⚙`/`✖` line,
+  the same way — the `[+N lines]` marker in the summary says how many; this is
+  where they are. Single-line commands add nothing, and no other tool has a
+  body.
+
+These are *logical* lines of any length. Fitting them to a server is §7's job,
+because the connection is the only thing that knows that server's `LINELEN`
+and the prefix it prepends.
 
 Tool outputs are never sent at any level.
 
@@ -502,9 +526,11 @@ one debug log line. Never an error to the harness.
   without ancestor markers; TOML fallback parser forced by a shadowing
   `tomllib` module like `briefing` does.
 - **events**: every row of §8 as a formatting test with a fixed clock;
-  truncation, splitting at 400 bytes with multi-byte characters, path
-  shortening; subagent description FIFO; the same subagent tool event at all
+  truncation with multi-byte characters, path shortening; subagent description FIFO; the same subagent tool event at all
   three levels (hidden, shown with id, shown with id).
+- **irc**: the payload budget from a fake server's `LINELEN` and from the
+  echoed mask, an over-long line arriving as several `PRIVMSG`s that lose
+  nothing and keep their indent, a nonsense `LINELEN` ignored.
 - **usage**: fixture transcripts (anonymised excerpts of real Claude and Codex
   files) for the `requestId` dedupe, incremental offsets, turn selection by
   `turn_id`, subagent files.

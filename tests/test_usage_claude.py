@@ -2,7 +2,9 @@ import json
 import os
 import tempfile
 import unittest
+from unittest import mock
 
+from agent_irc import usage as usage_mod
 from agent_irc.usage import ClaudeTranscript, Usage, claude_subagent_path
 
 
@@ -84,6 +86,20 @@ class ClaudeTranscriptTests(unittest.TestCase):
             f.write(json.dumps(assistant("r3", {"input_tokens": 1, "output_tokens": 7})) + "\n")
         self.assertEqual(t.read_new().output, 7)
         self.assertEqual(t.read_new().output, 0)
+
+    def test_peek_model_reads_the_tail_and_leaves_the_offset_alone(self):
+        self.append(assistant("r1", USAGE_A), assistant("r2", USAGE_B, model="claude-sonnet-5"))
+        t = ClaudeTranscript(self.path)
+        with mock.patch.object(usage_mod, "PEEK_BYTES", 400):  # cuts into the first record
+            self.assertEqual(t.peek_model(), "claude-sonnet-5")
+        self.assertEqual(t.offset, 0)
+        self.assertEqual(t.read_new().output, 198 + 349)
+
+    def test_peek_model_without_a_readable_transcript(self):
+        self.assertIsNone(ClaudeTranscript(self.path).peek_model())
+        self.append(assistant("r1", USAGE_A))
+        with mock.patch.object(usage_mod, "PEEK_BYTES", 20):  # every complete line is cut away
+            self.assertIsNone(ClaudeTranscript(self.path).peek_model())
 
     def test_subagent_path(self):
         self.assertEqual(claude_subagent_path("/h/.claude/projects/p/sess.jsonl", "sess", "a293"),

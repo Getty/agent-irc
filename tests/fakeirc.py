@@ -12,12 +12,14 @@ TLS_KEY = os.path.join(FIXTURES, "test-key.pem")
 
 
 class FakeIrcServer:
-    def __init__(self, taken_nicks=(), password=None, max_nick=None, welcome_delay=0.0, tls=False):
+    def __init__(self, taken_nicks=(), password=None, max_nick=None, welcome_delay=0.0, tls=False,
+                 isupport=()):
         self.taken = set(taken_nicks)
         self.password = password
         self.max_nick = max_nick
         self.welcome_delay = welcome_delay
         self.tls = tls
+        self.isupport = ["NICKLEN=30"] + list(isupport)
         self.received = []
         self.connections = []
         self.lock = threading.Lock()
@@ -102,7 +104,8 @@ class FakeIrcServer:
                     if self.welcome_delay:
                         time.sleep(self.welcome_delay)
                     self._send(conn, ":srv 001 %s :Welcome" % nick)
-                    self._send(conn, ":srv 005 %s NICKLEN=30 :are supported by this server" % nick)
+                    self._send(conn, ":srv 005 %s %s :are supported by this server"
+                               % (nick, " ".join(self.isupport)))
         finally:
             try:
                 conn.close()

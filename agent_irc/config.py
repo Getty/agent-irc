@@ -10,6 +10,10 @@ from urllib.parse import unquote
 NAMESPACE = "agent-irc"
 LEVELS = ("activity", "subactivity", "full")
 LIST_KEY_RE = re.compile(r"^(?:[a-z0-9]+_)?channels$")
+# How fast we may send and how much may wait. The defaults are the safe ones
+# for a public server; an ircd of one's own takes far more, and level "full"
+# wants it -- one Write can be a thousand lines.
+TUNING_KEYS = ("flood_burst", "flood_interval", "queue_limit")
 
 
 @dataclass(frozen=True)
@@ -40,6 +44,9 @@ class Target:
 class Config:
     targets: List[Target]
     level: str
+    flood_burst: int = 4
+    flood_interval: float = 2.0
+    queue_limit: int = 500  # 0 = never drop
 
 
 _URL_RE = re.compile(
@@ -274,10 +281,23 @@ def is_trusted(harness, cwd, home):
     return claude_trusted(home, cwd)
 
 
+def tuning_value(key, value):
+    """One tuning number, or None if it is not a number this key can take."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if key == "flood_interval":
+        return float(value) if value >= 0 else None
+    if not isinstance(value, int):
+        return None
+    return value if value >= (1 if key == "flood_burst" else 0) else None
+
+
 def merge_layers(layers):
-    """Named lists: last definition of a name wins whole. Level: last valid wins."""
+    """Named lists: last definition of a name wins whole. Level and tuning
+    numbers: last valid value wins."""
     lists = {}
     level = "activity"
+    tuning = {}
     for layer in layers:
         if not isinstance(layer, dict):
             continue
@@ -286,7 +306,11 @@ def merge_layers(layers):
                 lists[key] = [v for v in value if isinstance(v, str)]
             elif key == "level" and value in LEVELS:
                 level = value
-    return lists, level
+            elif key in TUNING_KEYS:
+                number = tuning_value(key, value)
+                if number is not None:
+                    tuning[key] = number
+    return lists, level, tuning
 
 
 def resolve_targets(lists, env, default_user, log=None):
@@ -328,6 +352,6 @@ def load_config(harness, cwd, home, env, log=None):
         _log(log, "agent-irc: %s is not trusted by %s, project config ignored" % (cwd, harness))
     reader = read_toml_namespace if harness == "codex" else read_json_namespace
     layers = [reader(path, log) for path in config_files(harness, cwd, home, trusted)]
-    lists, level = merge_layers(layers)
+    lists, level, tuning = merge_layers(layers)
     default_user = env.get("USER") or env.get("LOGNAME") or "agent"
-    return Config(resolve_targets(lists, env, default_user, log), level)
+    return Config(resolve_targets(lists, env, default_user, log), level, **tuning)

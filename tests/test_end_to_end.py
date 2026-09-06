@@ -17,6 +17,51 @@ def rpc(id_, method, params):
 
 
 class EndToEndTests(unittest.TestCase):
+    def test_full_level_sends_a_large_tool_input_whole(self):
+        """The point of level full: a 600-line Write reaches IRC as 600 lines.
+
+        Needs all three of the tuning numbers -- the default bucket sends one
+        line every two seconds and the default queue drops everything past
+        500 -- and a server whose LINELEN says a 5000-byte line fits in one
+        PRIVMSG.
+        """
+        fake = FakeIrcServer(isupport=("LINELEN=8192",))
+        self.addCleanup(fake.close)
+        with tempfile.TemporaryDirectory() as tmp:
+            home = os.path.join(tmp, "home")
+            cwd = os.path.join(tmp, "proj")
+            os.makedirs(os.path.join(home, ".codex"))
+            os.makedirs(cwd)
+            with open(os.path.join(home, ".codex", "config.toml"), "w") as f:
+                f.write('[agent-irc]\nchannels = ["irc://getty@127.0.0.1:%d/#agents"]\n'
+                        'level = "full"\nflood_burst = 2000\nflood_interval = 0.0005\nqueue_limit = 0\n' % fake.port)
+            env = dict(os.environ, HOME=home, USER="getty")
+            proc = subprocess.Popen([sys.executable, os.path.join(ROOT, "bin", "agent-irc")], cwd=cwd, env=env,
+                                    stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            self.addCleanup(proc.kill)
+            content = "\n".join("line %d" % i for i in range(600)) + "\n" + "y" * 5000
+            proc.stdin.write("".join([
+                rpc(1, "initialize", {"protocolVersion": "2025-06-18", "clientInfo": {"name": "codex"}}),
+                rpc(2, "tools/call", {"name": "event", "arguments": {"event": "UserPromptSubmit", "session_id": SID,
+                                                                      "cwd": cwd, "prompt": "write it"}}),
+                rpc(3, "tools/call", {"name": "event", "arguments": {"event": "PostToolUse", "session_id": SID,
+                                                                      "tool_name": "Write", "tool_use_id": "w1",
+                                                                      "tool_input": {"file_path": cwd + "/big.txt",
+                                                                                     "content": content}}}),
+            ]))
+            proc.stdin.flush()
+            self.assertTrue(fake.wait_for(lambda ls: "PRIVMSG #agents :    line 599" in ls, timeout=30),
+                            "last body line never arrived")
+            self.assertTrue(fake.wait_for(lambda ls: "PRIVMSG #agents :    " + "y" * 5000 in ls, timeout=30),
+                            "the 5000-byte line did not fit one PRIVMSG")
+            out, err = proc.communicate("", timeout=30)
+            self.assertEqual(proc.returncode, 0, err)
+        lines = fake.lines()
+        sent = [l for l in lines if l.startswith("PRIVMSG #agents :")]
+        for i in range(600):
+            self.assertIn("PRIVMSG #agents :    line %d" % i, sent)
+        self.assertFalse([l for l in sent if "dropped" in l], "lines were dropped at level full")
+
     def test_subprocess_mirrors_session_and_quits_on_eof(self):
         fake = FakeIrcServer(password="pw")
         self.addCleanup(fake.close)

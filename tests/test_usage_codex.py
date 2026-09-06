@@ -42,6 +42,14 @@ class CodexTranscriptTests(unittest.TestCase):
         u = CodexTranscript(self.path).read_turn("t1")
         self.assertEqual((u.input, u.cached, u.output, u.tools, u.model), (250, 120, 30, 2, "gpt-5.6-sol"))
 
+    def test_peek_model_leaves_the_turn_read_alone(self):
+        self.append(rec("turn_context", {"turn_id": "t1", "model": "gpt-5.6-sol"}),
+                    usage_record("t1", tokens(100, 50, 10), tokens(100, 50, 10)))
+        t = CodexTranscript(self.path)
+        self.assertEqual(t.peek_model(), "gpt-5.6-sol")
+        self.assertEqual(t.offset, 0)
+        self.assertEqual(t.read_turn("t1").input, 100)
+
     def test_turn_id_none_takes_last_record(self):
         self.append(usage_record("t1", tokens(1, 0, 1), tokens(1, 0, 1)),
                     usage_record("t2", tokens(9, 0, 2), tokens(10, 0, 3)))
