@@ -134,9 +134,14 @@ class ManifestTests(unittest.TestCase):
         self.assertEqual(load(".codex-plugin/plugin.json")["version"], agent_irc.__version__)
 
     def test_mcp_json(self):
+        # The documented shape wraps the servers in "mcpServers" (plugins
+        # reference, "MCP servers"). A bare {"irc": ...} map also loads in
+        # 2.1.263, but nothing documents that, so the plugin ships the shape
+        # the reference shows.
         m = load(".mcp.json")
-        self.assertEqual(m["irc"]["command"], "python3")
-        self.assertEqual(m["irc"]["args"], ["${CLAUDE_PLUGIN_ROOT}/bin/agent-irc"])
+        self.assertEqual(set(m), {"mcpServers"})
+        self.assertEqual(m["mcpServers"]["irc"]["command"], "python3")
+        self.assertEqual(m["mcpServers"]["irc"]["args"], ["${CLAUDE_PLUGIN_ROOT}/bin/agent-irc"])
 
     def test_hooks(self):
         # Interrupt is Codex's event, not Claude Code's: `claude plugin

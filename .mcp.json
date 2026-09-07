@@ -1,6 +1,8 @@
 {
-  "irc": {
-    "command": "python3",
-    "args": ["${CLAUDE_PLUGIN_ROOT}/bin/agent-irc"]
+  "mcpServers": {
+    "irc": {
+      "command": "python3",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/bin/agent-irc"]
+    }
   }
 }
