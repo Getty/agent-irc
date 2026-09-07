@@ -104,8 +104,8 @@ class IsupportTests(unittest.TestCase):
 
 
 class QueueLimitTests(unittest.TestCase):
-    def conn(self, **kw):
-        return IrcConnection(Server("irc", "h", 6667, "u", None, False), ["#a"], "agent-irc", "rn",
+    def conn(self, channels=("#a",), **kw):
+        return IrcConnection(Server("irc", "h", 6667, "u", None, False), list(channels), "agent-irc", "rn",
                              lambda m: None, **kw)
 
     def test_the_default_cap_drops_the_oldest(self):
@@ -124,6 +124,16 @@ class QueueLimitTests(unittest.TestCase):
 
     def test_an_explicit_cap_is_honoured(self):
         c = self.conn(queue_limit=10)
+        for i in range(13):
+            c.send_message("m%d" % i)
+        self.assertEqual((len(c.queue), c.dropped), (10, 3))
+
+    def test_the_cap_counts_logical_lines_not_channel_copies(self):
+        """A second channel must not halve the queue. One send_message is one
+        line however many channels it goes to; a cap counting per-channel
+        copies would drop twice as early and, worse, drop a line from one
+        channel while keeping it in the other."""
+        c = self.conn(channels=("#a", "#b"), queue_limit=10)
         for i in range(13):
             c.send_message("m%d" % i)
         self.assertEqual((len(c.queue), c.dropped), (10, 3))

@@ -113,13 +113,18 @@ class IrcConnection(threading.Thread):
 
     # -- public -------------------------------------------------------------
 
-    def send_message(self, text):
+    def send_message(self, text, channels=None):
+        """Queue one logical line for every channel (or just `channels`).
+
+        The queue holds logical lines, not per-channel copies: a cap counting
+        copies would drop twice as early on a two-channel connection, and drop
+        a line from one channel while leaving it in the other.
+        """
         with self.lock:
-            for channel in self.channels:
-                if self.queue_limit and len(self.queue) >= self.queue_limit:
-                    self.queue.popleft()
-                    self.dropped += 1
-                self.queue.append((channel, text))
+            if self.queue_limit and len(self.queue) >= self.queue_limit:
+                self.queue.popleft()
+                self.dropped += 1
+            self.queue.append((channels, text))
 
     def begin_close(self, quit_message):
         """Ask the thread to drain, QUIT and exit; returns at once.
@@ -182,7 +187,9 @@ class IrcConnection(threading.Thread):
         with self.lock:
             # Chunks cut to the old connection's budget go back to the queue:
             # this server may answer with a different LINELEN than the last one.
-            self.queue.extendleft(reversed(self.pending))
+            # Each goes back addressed to its own channel -- the other channels
+            # on this connection already had that part.
+            self.queue.extendleft(reversed([((channel,), part) for channel, part in self.pending]))
             self.pending = []
         if self.server.password:
             self._raw("PASS :" + self.server.password)
@@ -269,8 +276,9 @@ class IrcConnection(threading.Thread):
                 if not self.pending:
                     if not self.queue:
                         return 0.0
-                    channel, text = self.queue.popleft()
+                    channels, text = self.queue.popleft()
                     self.pending = [(channel, part)
+                                    for channel in (self.channels if channels is None else channels)
                                     for part in wrap_payload(text, self.payload_limit(channel))]
                     if not self.pending:
                         continue

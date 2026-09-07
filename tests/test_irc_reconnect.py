@@ -85,6 +85,26 @@ class ReconnectTests(unittest.TestCase):
         self.assertIn("PRIVMSG #q :m%d" % (irc.QUEUE_LIMIT + 4), lines)
         self.assertNotIn("PRIVMSG #q :m4", lines)
 
+    def test_a_cap_drops_whole_lines_not_single_channel_copies(self):
+        """Every channel on a connection must see the same lines. A cap that
+        counts per-channel copies drops the tail of one channel's stream while
+        the other keeps it -- the two logs then disagree about what happened."""
+        self.conn.close("unused", 2.0)
+        conn = IrcConnection(Server("irc", "127.0.0.1", self.fake.port, "u", None, False), ["#q", "#r"],
+                             "proj", "codex 01a ~/p", self.logs.append, queue_limit=11,
+                             wait=self.delays.append, bucket=FloodBucket(burst=10000, interval=0.0001))
+        for i in range(13):
+            conn.send_message("m%d" % i)
+        self.assertEqual(conn.dropped, 2)
+        conn.start()
+        self.addCleanup(conn.close, "bye", 2.0)
+        self.assertTrue(self.fake.wait_for(lambda ls: "PRIVMSG #r :… dropped 2 lines" in ls, timeout=15))
+        sent = self.fake.lines()
+        q = [l.split(" :", 1)[1] for l in sent if l.startswith("PRIVMSG #q :")]
+        r = [l.split(" :", 1)[1] for l in sent if l.startswith("PRIVMSG #r :")]
+        self.assertEqual(q, r)
+        self.assertEqual(q[0], "m2")
+
 
 if __name__ == "__main__":
     unittest.main()
