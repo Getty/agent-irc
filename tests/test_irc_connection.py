@@ -57,6 +57,28 @@ class ConnectionTests(unittest.TestCase):
                          ["NICK agent-irc-1", "NICK agent-irc-2", "NICK agent-irc-3"])
         self.assertEqual(conn.nick, "agent-irc-3")
 
+    def test_a_held_nick_tries_the_next_one(self):
+        """437 is what a server answers for a nick it is holding (after a
+        netsplit or a recent QUIT). Like 433 it means "not this one, try
+        another" -- without it registration just times out."""
+        fake = FakeIrcServer(held_nicks=["agent-irc-1", "agent-irc-2"])
+        self.addCleanup(fake.close)
+        conn = self.connect(fake)
+        self.assertTrue(fake.wait_for(lambda ls: "JOIN #a" in ls))
+        self.assertEqual([l for l in fake.lines() if l.startswith("NICK")],
+                         ["NICK agent-irc-1", "NICK agent-irc-2", "NICK agent-irc-3"])
+        self.assertEqual(conn.nick, "agent-irc-3")
+
+    def test_a_rejected_server_password_gives_up(self):
+        """464 says the PASS is wrong. Reconnecting cannot fix that, so the
+        thread stops instead of retrying the same password forever."""
+        fake = FakeIrcServer(password="s3cret")
+        self.addCleanup(fake.close)
+        conn = self.connect(fake, password="wrong")
+        self.assertTrue(wait_until(lambda: not conn.is_alive()))
+        self.assertTrue([l for l in self.logs if "giving up" in l and "password" in l.lower()],
+                        self.logs)
+
     def test_erroneous_nick_shortens(self):
         fake = FakeIrcServer(max_nick=9)
         self.addCleanup(fake.close)

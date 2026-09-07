@@ -13,8 +13,9 @@ TLS_KEY = os.path.join(FIXTURES, "test-key.pem")
 
 class FakeIrcServer:
     def __init__(self, taken_nicks=(), password=None, max_nick=None, welcome_delay=0.0, tls=False,
-                 isupport=(), isupport_delay=0.0):
+                 isupport=(), isupport_delay=0.0, held_nicks=()):
         self.taken = set(taken_nicks)
+        self.held = set(held_nicks)  # answered with 437, as a server does for a nick it is holding
         self.password = password
         self.max_nick = max_nick
         self.welcome_delay = welcome_delay
@@ -84,6 +85,9 @@ class FakeIrcServer:
                     if candidate in self.taken:
                         self._send(conn, ":srv 433 * %s :Nickname is already in use" % candidate)
                         continue
+                    if candidate in self.held:
+                        self._send(conn, ":srv 437 * %s :Nick is temporarily unavailable" % candidate)
+                        continue
                     if self.max_nick and len(candidate) > self.max_nick:
                         self._send(conn, ":srv 432 * %s :Erroneous nickname" % candidate)
                         continue
@@ -100,6 +104,7 @@ class FakeIrcServer:
                 if nick and user and not welcomed:
                     welcomed = True
                     if self.password is not None and passed != self.password:
+                        self._send(conn, ":srv 464 * :Password incorrect")
                         self._send(conn, "ERROR :Closing Link: bad password")
                         break
                     if self.welcome_delay:

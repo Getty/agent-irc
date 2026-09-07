@@ -362,7 +362,13 @@ class IrcConnection(threading.Thread):
                 self._raw("JOIN " + channel)
         elif command == "005":
             self._note_isupport(params[1:])
-        elif command == "433" and not self.registered:
+        elif command == "464":
+            # Wrong server password: the same PASS will be refused on every
+            # retry, so this is not something reconnecting can fix.
+            raise GiveUp("server rejected our password")
+        elif command in ("433", "437") and not self.registered:
+            # 433 in use, 437 held by the server (netsplit, recent QUIT):
+            # both mean "not this nick" and both are answered the same way.
             self.nick_try += 1
             if self.nick_try > MAX_NICK_TRIES:
                 raise GiveUp("no free nick after %d tries" % MAX_NICK_TRIES)
