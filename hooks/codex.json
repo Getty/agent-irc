@@ -148,7 +148,7 @@
             "server": "irc",
             "tool": "event",
             "async": true,
-            "timeout": 5,
+            "timeout": 3,
             "input": {
               "event": "${hook_event_name}",
               "session_id": "${session_id}",

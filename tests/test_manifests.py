@@ -113,12 +113,20 @@ class ManifestTests(unittest.TestCase):
             self.assertEqual(hook["type"], "mcp_tool", event)
             self.assertEqual(hook["tool"], "event", event)
             self.assertTrue(hook["async"], event)
-            self.assertEqual(hook["timeout"], 5, event)
+            # Codex bounds Interrupt hooks at 3s and logs "warning: clamping
+            # Interrupt hook timeout to 3s" on every session that asks for
+            # more; asking for the bound it enforces keeps the run quiet.
+            self.assertEqual(hook["timeout"], 3 if event == "Interrupt" else 5, event)
             self.assertEqual(set(hook["input"]), keys, event)
-            # every value codex does send stays the same substitution as
-            # the shared Claude Code hooks file, just fewer keys
+            # Every value codex does send stays the same substitution as the
+            # shared Claude Code hooks file, just fewer keys -- except
+            # Interrupt, which that file no longer declares (Claude Code has
+            # no such event), so it is checked against the same convention.
             for key in keys:
-                self.assertEqual(hook["input"][key], shared[event][0]["hooks"][0]["input"][key], (event, key))
+                expected = ("${hook_event_name}" if key == "event" else "${%s}" % key)
+                if event in shared:
+                    expected = shared[event][0]["hooks"][0]["input"][key]
+                self.assertEqual(hook["input"][key], expected, (event, key))
 
     def test_versions_match(self):
         import agent_irc
@@ -131,8 +139,13 @@ class ManifestTests(unittest.TestCase):
         self.assertEqual(m["irc"]["args"], ["${CLAUDE_PLUGIN_ROOT}/bin/agent-irc"])
 
     def test_hooks(self):
+        # Interrupt is Codex's event, not Claude Code's: `claude plugin
+        # validate` answers a shared file declaring it with "hooks.Interrupt:
+        # unknown hook event; entry ignored at runtime", and the 2.1.263
+        # binary contains no such string at all (checked 2026-09-07). It
+        # lives in hooks/codex.json only.
         hooks = load("hooks/hooks.json")["hooks"]
-        self.assertEqual(set(hooks), CLAUDE_EVENTS | CODEX_ONLY_EVENTS)
+        self.assertEqual(set(hooks), CLAUDE_EVENTS)
         for event, groups in hooks.items():
             for group in groups:
                 for hook in group["hooks"]:
