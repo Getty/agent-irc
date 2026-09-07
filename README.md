@@ -74,7 +74,9 @@ irc://[user[:password]@]host[:port]/channel
 the IRC username in the hostmask, `password` is sent as the ircd `PASS`. The
 channel may be written with or without `#`. `${VAR}` is replaced from the
 environment, so a committed project file never has to contain a password.
-`?insecure=1` skips certificate verification.
+`?insecure=1` skips certificate verification -- which an ircd of one's own,
+with a self-signed certificate, needs. An IPv6 address goes in brackets:
+`irc://[2001:db8::1]:6667/#agents`.
 
 ### Channel lists
 

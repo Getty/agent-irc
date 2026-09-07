@@ -161,6 +161,39 @@ prompt never appears in IRC either way. `App._handle` recognizes a
 `SessionEnd` as literally the first event a fresh process sees and stays
 quiet instead of announcing anything.
 
+**`/clear`, by contrast, delivers `SessionEnd` to the *running* process, and
+the next prompt rolls the session over on the same connection.** Verified live
+2026-09-08 by driving a real interactive `claude` through a pty in a throwaway
+directory: the channel showed `▶ session 47926732 …`, the turn, then
+`■ session ended (clear) · 41s · 1 turns · 0 tools`, then
+`▶ session 3cde7677 …` — with no JOIN between them, so it is one process and
+one IRC connection throughout. One `/clear` therefore exercises both paths in
+`App._handle`, in that order: the `SessionEnd` for the id it is running, then
+the rollover on a `UserPromptSubmit` carrying an id it has never seen.
+
+**`Interrupt` is Codex's hook event, not Claude Code's.** `claude plugin
+validate` answers a shared hooks file that declares it with
+`hooks.Interrupt: unknown hook event; entry ignored at runtime`, and the
+2.1.263 binary contains no such string at all (checked 2026-09-07) — the entry
+never did anything there, it only made a published plugin validate with a
+warning. It lives in `hooks/codex.json` alone, where its `timeout` asks for the
+3s Codex enforces anyway (`warning: clamping Interrupt hook timeout to 3s` on
+every session that asks for more).
+
+**`.mcp.json` ships the documented `mcpServers` wrapper.** A bare
+`{"irc": …}` map loads too — that is what 0.1.0 shipped, and the copy in the
+published catalog still runs on it (confirmed live 2026-09-08) — but the
+plugins reference documents `{"mcpServers": {…}}` and nothing documents the
+bare form. Changed and verified live the same day: a session in a throwaway
+directory started the server and produced the whole run in IRC.
+
+**`ircs://` to an ircd with a self-signed certificate needs `?insecure=1`.**
+Live 2026-09-08 against ergo's 6697 on `irc.cihq`: with verification on the
+connection fails cleanly and retries with backoff
+(`[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: self-signed
+certificate`), which is the behaviour to want; with `?insecure=1` it registers
+over TLSv1.3 (`TLS_AES_128_GCM_SHA256`), joins, delivers its line and quits.
+
 **Codex substitutes nothing in a plugin's `.mcp.json`.** `${CLAUDE_PLUGIN_ROOT}`
 and `${PLUGIN_ROOT}` arrive verbatim, the server starts in the session's cwd,
 and no environment variable names the install root. The only thing the plugin
@@ -252,7 +285,8 @@ and `test_sigint_then_sigterm_still_sends_quit`, and
 ## Verified against real harnesses
 
 Filled in by the live verification (plan Task 18), 2026-09-05, against
-`claude` 2.1.261 and `codex` 0.153.4; the Codex column was re-verified
+`claude` 2.1.261 and `codex` 0.153.4, with the Claude Code column extended
+2026-09-08 against `claude` 2.1.263 (the rows below the `async: true` one); the Codex column was re-verified
 2026-09-05 (Task 19) after the self-locating bootstrap and the hook fixes
 below, and the `SessionEnd` row for both columns was re-verified again
 2026-09-05 (Task 20) after adding signal handling. Each item records the
@@ -271,3 +305,7 @@ never produced the evidence (noted why).
 | hook-triggered `tools/call` passes without approval | yes, no approval prompt across 5 runs, no config needed (2026-09-05) | yes, no approval prompt across every `codex exec --dangerously-bypass-hook-trust` run once the server-name and field-whitelist fixes were in place (2026-09-05) |
 | `SessionEnd` reaches the server before stdin closes | no — never delivered to a live process: either a *fresh, stateless* reconnect that stays quiet (see trap above), or the original process ended by signal before any `SessionEnd` hook could fire; the harness kills the server with `SIGINT` then `SIGTERM` instead, and `install_signal_handlers` still sends the `QUIT` summary from there — confirmed live, real numbers, 4/4 runs (2026-09-05, Task 20, see trap above) | no — Codex rejects `mcp_tool` hooks on `SessionEnd` outright; the harness ends the server with a plain `SIGTERM` instead (not a dropped pipe, as Task 19 assumed), and `install_signal_handlers` sends the `QUIT` summary from there — confirmed live, real numbers, 3/3 runs (2026-09-05, Task 20, see trap above) |
 | `async: true` keeps delivery order | not always: `PostToolUse` for a parent Agent tool call was observed to arrive before `SubagentStart` for the very subagent it spawned; handled without crashing (2026-09-05) | not observed the same way: `SubagentStart`/`SubagentStop` `mcp_tool` hooks never fired at all in any configuration tried, so there was nothing to compare ordering against (2026-09-05, see trap above) |
+| `/clear` session rollover | live, interactive through a pty, 2026-09-08: `SessionEnd` reaches the *running* process (`■ session ended (clear)`), the next prompt announces a new session id over the same connection, no re-JOIN | n/a — Codex has no `/clear` reaching an `mcp_tool` hook, and refuses `SessionEnd` outright |
+| `PermissionRequest` reaches IRC | yes — `⚠ permission: AskUserQuestion`, live 2026-09-08 | not observed: could not be triggered from `codex exec` (2026-09-05), which is why its field whitelist stays at the base set |
+| `ircs://` to a self-signed ircd | live 2026-09-08 against ergo's 6697: refused with verification on (clean failure, backoff retry), TLSv1.3 with `?insecure=1`, line delivered | not tested — same connection code, nothing harness-specific |
+| install from the published catalog | live 2026-09-08 in an isolated `CLAUDE_CONFIG_DIR`: `plugin marketplace add Getty/marketplace` + `plugin install agent-irc@getty`, then a real session produced session line, prompt, turn summary and QUIT in the channel | `codex plugin add agent-irc@getty` verified live 2026-09-06 |

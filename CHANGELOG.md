@@ -1,6 +1,27 @@
 # Changelog
 
-## 0.1.0 — unreleased
+## Unreleased
+
+- Fix: the queue cap counted one entry per channel, so a connection with two
+  channels filled up after half as many lines and a drop could remove a line
+  from one channel while the other kept it. The queue now holds logical
+  lines and fans each out to every channel.
+- Fix: `437` (nick held by the server after a netsplit or a recent QUIT) is
+  answered like `433` by trying the next nick, instead of letting
+  registration run into its timeout; `464` (wrong server password) now stops
+  the connection instead of retrying the same password forever.
+- Fix: a failed `Agent` tool call left its queued description in the FIFO, so
+  every later subagent was announced with the description of the call before
+  it. Descriptions are keyed by `tool_use_id` now, and the queue is bounded.
+- Fix: IPv6 literals in server URLs (`irc://[2001:db8::1]:6667/#c`) parse.
+- Fix: the 2s timeout that keeps a partial TLS record from blocking the stop
+  path no longer bounds sending as well.
+- Fix: `.mcp.json` uses the documented `{"mcpServers": {…}}` shape.
+- Fix: `hooks/hooks.json` no longer declares `Interrupt`, which Claude Code
+  does not know (it was ignored at runtime and made `claude plugin validate`
+  warn); Codex's copy asks for the 3s timeout Codex enforces there anyway.
+
+## 0.1.0 — 2026-09-06
 
 - First version: MCP server as session process, `mcp_tool` hooks for Claude
   Code and Codex, named channel lists in the harness settings, three levels
