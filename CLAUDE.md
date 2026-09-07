@@ -178,7 +178,9 @@ validate` answers a shared hooks file that declares it with
 never did anything there, it only made a published plugin validate with a
 warning. It lives in `hooks/codex.json` alone, where its `timeout` asks for the
 3s Codex enforces anyway (`warning: clamping Interrupt hook timeout to 3s` on
-every session that asks for more).
+every session that asks for more) — after the change that warning is gone from
+a real `codex exec` run, verified live 2026-09-08 with the plugin reinstalled
+from this repo's HEAD.
 
 **`.mcp.json` ships the documented `mcpServers` wrapper.** A bare
 `{"irc": …}` map loads too — that is what 0.1.0 shipped, and the copy in the
@@ -306,6 +308,7 @@ never produced the evidence (noted why).
 | `SessionEnd` reaches the server before stdin closes | no — never delivered to a live process: either a *fresh, stateless* reconnect that stays quiet (see trap above), or the original process ended by signal before any `SessionEnd` hook could fire; the harness kills the server with `SIGINT` then `SIGTERM` instead, and `install_signal_handlers` still sends the `QUIT` summary from there — confirmed live, real numbers, 4/4 runs (2026-09-05, Task 20, see trap above) | no — Codex rejects `mcp_tool` hooks on `SessionEnd` outright; the harness ends the server with a plain `SIGTERM` instead (not a dropped pipe, as Task 19 assumed), and `install_signal_handlers` sends the `QUIT` summary from there — confirmed live, real numbers, 3/3 runs (2026-09-05, Task 20, see trap above) |
 | `async: true` keeps delivery order | not always: `PostToolUse` for a parent Agent tool call was observed to arrive before `SubagentStart` for the very subagent it spawned; handled without crashing (2026-09-05) | not observed the same way: `SubagentStart`/`SubagentStop` `mcp_tool` hooks never fired at all in any configuration tried, so there was nothing to compare ordering against (2026-09-05, see trap above) |
 | `/clear` session rollover | live, interactive through a pty, 2026-09-08: `SessionEnd` reaches the *running* process (`■ session ended (clear)`), the next prompt announces a new session id over the same connection, no re-JOIN | n/a — Codex has no `/clear` reaching an `mcp_tool` hook, and refuses `SessionEnd` outright |
+| idle notification (`Notification`, matcher `idle_prompt`) | yes — `==== … WAITING FOR INPUT ====` exactly 60s after the turn ended, live 2026-09-08 | not observed |
 | `PermissionRequest` reaches IRC | yes — `⚠ permission: AskUserQuestion`, live 2026-09-08 | not observed: could not be triggered from `codex exec` (2026-09-05), which is why its field whitelist stays at the base set |
 | `ircs://` to a self-signed ircd | live 2026-09-08 against ergo's 6697: refused with verification on (clean failure, backoff retry), TLSv1.3 with `?insecure=1`, line delivered | not tested — same connection code, nothing harness-specific |
 | install from the published catalog | live 2026-09-08 in an isolated `CLAUDE_CONFIG_DIR`: `plugin marketplace add Getty/marketplace` + `plugin install agent-irc@getty`, then a real session produced session line, prompt, turn summary and QUIT in the channel | `codex plugin add agent-irc@getty` verified live 2026-09-06 |
