@@ -1,9 +1,21 @@
+import socket
 import time
 import unittest
 
-from agent_irc.config import Server
+from agent_irc.config import Server, parse_url
 from agent_irc.irc import FloodBucket, IrcConnection
 from tests.fakeirc import FakeIrcServer
+
+
+def has_ipv6_loopback():
+    if not socket.has_ipv6:
+        return False
+    try:
+        with socket.socket(socket.AF_INET6, socket.SOCK_STREAM) as s:
+            s.bind(("::1", 0))
+        return True
+    except OSError:
+        return False
 
 
 def fast_bucket():
@@ -56,6 +68,20 @@ class ConnectionTests(unittest.TestCase):
         self.assertEqual([l for l in fake.lines() if l.startswith("NICK")],
                          ["NICK agent-irc-1", "NICK agent-irc-2", "NICK agent-irc-3"])
         self.assertEqual(conn.nick, "agent-irc-3")
+
+    @unittest.skipUnless(has_ipv6_loopback(), "no IPv6 loopback here")
+    def test_connects_to_a_bracketed_ipv6_literal(self):
+        """The whole chain: an IPv6 URL parses, the bare address reaches
+        socket.create_connection, and the label brackets it again."""
+        fake = FakeIrcServer(host="::1")
+        self.addCleanup(fake.close)
+        target = parse_url("irc://[::1]:%d/#a" % fake.port, "getty")
+        conn = IrcConnection(target.server, [target.channel], "agent-irc", "claude e873 ~/dev/agent-irc",
+                             self.logs.append, wait=lambda seconds: None, bucket=fast_bucket())
+        conn.start()
+        self.addCleanup(conn.close, "test over", 2.0)
+        self.assertTrue(fake.wait_for(lambda ls: "JOIN #a" in ls), self.logs)
+        self.assertEqual(target.server.label, "[::1]:%d" % fake.port)
 
     def test_a_held_nick_tries_the_next_one(self):
         """437 is what a server answers for a nick it is holding (after a

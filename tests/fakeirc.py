@@ -13,7 +13,7 @@ TLS_KEY = os.path.join(FIXTURES, "test-key.pem")
 
 class FakeIrcServer:
     def __init__(self, taken_nicks=(), password=None, max_nick=None, welcome_delay=0.0, tls=False,
-                 isupport=(), isupport_delay=0.0, held_nicks=()):
+                 isupport=(), isupport_delay=0.0, held_nicks=(), host="127.0.0.1"):
         self.taken = set(taken_nicks)
         self.held = set(held_nicks)  # answered with 437, as a server does for a nick it is holding
         self.password = password
@@ -25,9 +25,10 @@ class FakeIrcServer:
         self.received = []
         self.connections = []
         self.lock = threading.Lock()
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.host = host
+        self.sock = socket.socket(socket.AF_INET6 if ":" in host else socket.AF_INET, socket.SOCK_STREAM)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.sock.bind(("127.0.0.1", 0))
+        self.sock.bind((host, 0))
         self.sock.listen(8)
         self.port = self.sock.getsockname()[1]
         threading.Thread(target=self._accept_loop, daemon=True).start()

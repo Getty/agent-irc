@@ -32,6 +32,21 @@ class ParseUrlTests(unittest.TestCase):
         for ch in ("&local", "+modeless", "!safe"):
             self.assertEqual(parse_url("irc://h/" + ch, "u").channel, ch)
 
+    def test_ipv6_literal_host(self):
+        """An IPv6 address in a URL is bracketed, but socket.create_connection
+        wants the bare address -- and every log line wants the brackets back."""
+        t = parse_url("irc://[2001:db8::1]:6667/#chan", "nobody")
+        self.assertEqual((t.server.host, t.server.port), ("2001:db8::1", 6667))
+        self.assertEqual(t.server.label, "[2001:db8::1]:6667")
+
+    def test_ipv6_literal_takes_the_scheme_default_port(self):
+        t = parse_url("ircs://[::1]/#chan", "nobody")
+        self.assertEqual((t.server.host, t.server.port), ("::1", 6697))
+
+    def test_ipv6_literal_with_userinfo(self):
+        t = parse_url("ircs://getty:pw@[fe80::1]:7000/#c", "nobody")
+        self.assertEqual((t.server.host, t.server.port, t.server.user), ("fe80::1", 7000, "getty"))
+
     def test_insecure_flag(self):
         self.assertTrue(parse_url("ircs://h/#c?insecure=1", "u").server.insecure)
         self.assertTrue(parse_url("ircs://h/#c?insecure=true", "u").server.insecure)

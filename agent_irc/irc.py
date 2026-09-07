@@ -25,6 +25,13 @@ QUEUE_LIMIT = 500
 # the advertised LINELEN, not the 512 fallback. Bounded, because a server may
 # send no ISUPPORT at all -- then the first pump proceeds on the fallback.
 GREETING_GRACE = 0.5
+# A partial TLS record can leave select() reporting the socket readable while
+# recv() still blocks for the rest of it; a long timeout there would block the
+# stop path for as long. Sending is a different job: a peer whose receive
+# window is briefly full must not cost us the connection, so _raw() lifts the
+# timeout for the write and puts the read one back afterwards.
+TLS_READ_TIMEOUT = 2.0
+SEND_TIMEOUT = 10.0
 BACKOFF = (5, 10, 20, 40, 60)
 REGISTRATION_TIMEOUT = 30.0
 NICK_LIMITS = (30, 9)
@@ -110,6 +117,7 @@ class IrcConnection(threading.Thread):
         self.linelen = LINELEN
         self.pending = []
         self.greeting_deadline = None
+        self.read_timeout = REGISTRATION_TIMEOUT
 
     # -- public -------------------------------------------------------------
 
@@ -167,14 +175,10 @@ class IrcConnection(threading.Thread):
                 context.check_hostname = False
                 context.verify_mode = ssl.CERT_NONE
             sock = context.wrap_socket(sock, server_hostname=self.server.host)
-            # A partial TLS record can leave select() reporting the socket
-            # readable while recv() still blocks waiting for the rest of
-            # it. REGISTRATION_TIMEOUT (30s) on that recv would block the
-            # stop path for up to 30s; 2s is enough for any real peer and
-            # keeps _read()'s per-call timeout error bounded.
-            sock.settimeout(2.0)
+            self.read_timeout = TLS_READ_TIMEOUT
         else:
-            sock.settimeout(REGISTRATION_TIMEOUT)
+            self.read_timeout = REGISTRATION_TIMEOUT
+        sock.settimeout(self.read_timeout)
         self.sock = sock
         self.buffer = b""
         self.registered = False
@@ -390,7 +394,12 @@ class IrcConnection(threading.Thread):
         line = line.replace("\r", " ").replace("\n", " ")
         line = _CONTROL_RE.sub("", line)
         data = cut_bytes(line, self.linelen - 2).encode("utf-8") + b"\r\n"
-        self.sock.sendall(data)
+        sock = self.sock
+        sock.settimeout(SEND_TIMEOUT)
+        try:
+            sock.sendall(data)
+        finally:
+            sock.settimeout(self.read_timeout)
 
     def _close_socket(self):
         sock, self.sock = self.sock, None

@@ -31,7 +31,10 @@ class Server:
 
     @property
     def label(self):
-        return "%s:%d" % (self.host, self.port)
+        # host holds the bare address, the way socket.create_connection wants
+        # it; an IPv6 literal gets its brackets back for anything human-read.
+        host = "[%s]" % self.host if ":" in self.host else self.host
+        return "%s:%d" % (host, self.port)
 
 
 @dataclass(frozen=True)
@@ -49,8 +52,10 @@ class Config:
     queue_limit: int = 500  # 0 = never drop
 
 
+# The host is either a name/IPv4, or an IPv6 literal in brackets -- which is
+# the only place a colon may appear before the port.
 _URL_RE = re.compile(
-    r"^(ircs?)://(?:([^@/]*)@)?([^/:?#@]+)(?::(\d+))?/([^?]*)(?:\?(.*))?$"
+    r"^(ircs?)://(?:([^@/]*)@)?(\[[0-9A-Fa-f:.]+\]|[^/:?#@]+)(?::(\d+))?/([^?]*)(?:\?(.*))?$"
 )
 
 _USERINFO_RE = re.compile(r"^([A-Za-z]+://).*@")
@@ -81,12 +86,15 @@ def parse_url(url, default_user):
         raise ValueError("URL has no channel: %r" % redact_url(url))
     if channel[0] not in "#&+!":
         channel = "#" + channel
+    host = host.lower()
+    if host.startswith("["):
+        host = host[1:-1]  # bare address for socket.create_connection
     insecure = False
     for part in (query or "").split("&"):
         key, _, value = part.partition("=")
         if key == "insecure" and (value or "1").lower() in ("1", "true", "yes"):
             insecure = True
-    return Target(Server(scheme, host.lower(), port, user, password, insecure), channel)
+    return Target(Server(scheme, host, port, user, password, insecure), channel)
 
 
 _VAR_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")

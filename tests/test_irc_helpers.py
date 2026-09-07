@@ -103,6 +103,45 @@ class IsupportTests(unittest.TestCase):
         self.assertEqual(c.payload_limit("#" + "x" * 60), 80)
 
 
+class SendTimeoutTests(unittest.TestCase):
+    """The socket timeout is set for reading; sending must not inherit it."""
+
+    class Recorder:
+        def __init__(self):
+            self.timeout = None
+            self.while_sending = []
+            self.sent = []
+
+        def settimeout(self, value):
+            self.timeout = value
+
+        def sendall(self, data):
+            self.while_sending.append(self.timeout)
+            self.sent.append(data)
+
+    def conn(self, scheme="ircs"):
+        c = IrcConnection(Server(scheme, "h", 6697, "u", None, False), ["#a"], "agent-irc", "rn",
+                          lambda m: None)
+        c.sock = self.Recorder()
+        c.read_timeout = irc.TLS_READ_TIMEOUT
+        c.sock.settimeout(c.read_timeout)
+        return c
+
+    def test_a_send_is_not_cut_short_by_the_read_timeout(self):
+        """A TLS read may not block longer than 2s or the stop path hangs on
+        it -- but that same timeout also bounds sendall, so a peer whose
+        receive window is full for two seconds would kill the connection."""
+        c = self.conn()
+        c._raw("PRIVMSG #a :hello")
+        self.assertEqual(c.sock.while_sending, [irc.SEND_TIMEOUT])
+        self.assertGreater(irc.SEND_TIMEOUT, irc.TLS_READ_TIMEOUT)
+
+    def test_the_read_timeout_is_back_in_place_after_a_send(self):
+        c = self.conn()
+        c._raw("PRIVMSG #a :hello")
+        self.assertEqual(c.sock.timeout, irc.TLS_READ_TIMEOUT)
+
+
 class QueueLimitTests(unittest.TestCase):
     def conn(self, channels=("#a",), **kw):
         return IrcConnection(Server("irc", "h", 6667, "u", None, False), list(channels), "agent-irc", "rn",
