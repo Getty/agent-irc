@@ -17,6 +17,7 @@ G = {
 IDLE_RULE = "===="
 SUMMARY_LIMIT = 120
 PROMPT_LIMIT = 200
+AGENT_DESCRIPTIONS = 64  # Agent calls whose description is still waiting for a SubagentStart
 
 _PLACEHOLDER_RE = re.compile(r"^\$\{[^}]*\}$")
 _SHELL_TOOLS = {"bash", "shell", "shell_command", "exec_command", "local_shell", "unified_exec"}
@@ -216,7 +217,10 @@ class Session:
         self.total = Usage()
         self.total_tools = 0
         self.tool_starts = {}
-        self.agent_descriptions = collections.deque()
+        # (tool_use_id, description) per Agent call, drained by SubagentStart.
+        # Bounded because Codex never delivers SubagentStart at all, so there
+        # nothing ever drains it.
+        self.agent_descriptions = collections.deque(maxlen=AGENT_DESCRIPTIONS)
         self.subagents = {}
         self.transcript = None
         self.ended = False
@@ -350,7 +354,7 @@ class Session:
             self.tool_starts[tool_use_id] = (self.clock(), name, summary, ev.get("agent_id"))
         if name.lower() in ("agent", "task") and not ev.get("agent_id"):
             tool_input = ev.get("tool_input") if isinstance(ev.get("tool_input"), dict) else {}
-            self.agent_descriptions.append(str(tool_input.get("description") or ""))
+            self.agent_descriptions.append((tool_use_id, str(tool_input.get("description") or "")))
         return []
 
     def _finish_tool(self, ev, glyph, suffix=""):
@@ -401,14 +405,26 @@ class Session:
 
     def _on_post_tool_use_failure(self, ev):
         error = _head(first_line(ev.get("error_message")) or "failed", self.summary_limit)
+        self._forget_agent_description(ev.get("tool_use_id"))
         return self._finish_tool(ev, G["fail"], error)
+
+    def _forget_agent_description(self, tool_use_id):
+        """A failed Agent call never reaches SubagentStart, so its description
+        has to leave the queue here. Left in, it would be handed to the next
+        subagent that does start, and to every one after that."""
+        if not tool_use_id:
+            return
+        for entry in self.agent_descriptions:
+            if entry[0] == tool_use_id:
+                self.agent_descriptions.remove(entry)
+                return
 
     # -- subagents ----------------------------------------------------------
 
     def _on_subagent_start(self, ev):
         agent_id = str(ev.get("agent_id") or "?")
         agent_type = str(ev.get("agent_type") or "agent")
-        description = self.agent_descriptions.popleft() if self.agent_descriptions else ""
+        description = self.agent_descriptions.popleft()[1] if self.agent_descriptions else ""
         self.subagents[agent_id] = {"type": agent_type, "desc": description, "started": self.clock(), "tools": 0}
         line = "%s subagent %s" % (G["sub_start"], agent_type)
         if description:

@@ -51,6 +51,29 @@ class SubagentTests(unittest.TestCase):
         lines = s.handle({"event": "SubagentStart", "session_id": SID, "agent_id": "b111", "agent_type": "Plan"})
         self.assertEqual(lines, ["⇢ subagent Plan"])
 
+    def test_a_failed_agent_call_does_not_shift_later_descriptions(self):
+        """An Agent call that fails never reaches SubagentStart, so its queued
+        description would sit in the FIFO forever and every later subagent
+        would be announced with the description of the call before it."""
+        s = self.session()
+        s.handle({"event": "PreToolUse", "session_id": SID, "tool_name": "Agent", "tool_use_id": "t1",
+                  "tool_input": {"subagent_type": "Explore", "description": "never runs", "prompt": "..."}})
+        s.handle({"event": "PostToolUseFailure", "session_id": SID, "tool_name": "Agent", "tool_use_id": "t1",
+                  "error_message": "no such agent type"})
+        s.handle({"event": "PreToolUse", "session_id": SID, "tool_name": "Agent", "tool_use_id": "t2",
+                  "tool_input": {"subagent_type": "Explore", "description": "the real one", "prompt": "..."}})
+        lines = s.handle({"event": "SubagentStart", "session_id": SID, "agent_id": "a1", "agent_type": "Explore"})
+        self.assertEqual(lines, ["⇢ subagent Explore: the real one"])
+
+    def test_the_description_queue_stays_bounded(self):
+        """Codex delivers no SubagentStart at all, so nothing drains the FIFO
+        there; it must not keep one entry per Agent call for the whole session."""
+        s = self.session(harness="codex")
+        for i in range(200):
+            s.handle({"event": "PreToolUse", "session_id": SID, "tool_name": "Agent", "tool_use_id": "t%d" % i,
+                      "tool_input": {"description": "d%d" % i, "prompt": "..."}})
+        self.assertLess(len(s.agent_descriptions), 100)
+
     def test_stop_line_with_transcript_usage(self):
         s = self.session()
         s.handle({"event": "SubagentStart", "session_id": SID, "agent_id": "a293f253", "agent_type": "Explore"})
