@@ -69,7 +69,7 @@ class AppTests(unittest.TestCase):
         stdin = io.StringIO("".join(lines))
         stdout = io.StringIO()
         app = App(self.home, {"USER": "getty"}, stdin, stdout, self.logs.append,
-                  connection_factory=connection_factory, debug=debug)
+                  connection_factory=connection_factory, debug=debug, cwd=self.cwd)
         app.run()
         return app, stdout.getvalue()
 
@@ -97,6 +97,49 @@ class AppTests(unittest.TestCase):
         self.assertTrue(conn.quit.startswith("session ended · "))
         self.assertIn("1 turns · 1 tools", conn.quit)
         self.assertEqual(len([l for l in out.splitlines() if l]), 5)
+
+    def settings(self, **extra):
+        with open(os.path.join(self.home, ".claude", "settings.json"), "w") as f:
+            json.dump({"agent-irc": dict({"channels": [A + "#agents"], "level": "activity"}, **extra)}, f)
+
+    def tools(self, out):
+        return [t["name"] for t in json.loads(out.splitlines()[1])["result"]["tools"]]
+
+    def test_read_messages_is_not_offered_unless_listening(self):
+        app, out = self.run_app([rpc(1, "initialize", {"clientInfo": {"name": "claude-code"}}),
+                                 rpc(2, "tools/list")])
+        self.assertEqual(self.tools(out), ["event"])
+        self.assertFalse(app.inbox.listening)
+
+    def test_listen_in_the_settings_offers_read_messages(self):
+        self.settings(listen=True, listen_from=["getty!*@vhost.example"])
+        app, out = self.run_app([rpc(1, "initialize", {"clientInfo": {"name": "claude-code"}}),
+                                 rpc(2, "tools/list")])
+        self.assertEqual(self.tools(out), ["event", "read_messages"])
+        self.assertTrue(app.inbox.listening)
+
+    def test_the_connection_feeds_the_inbox_through_the_allowlist(self):
+        self.settings(listen=True, listen_from=["getty!*@vhost.example"])
+        app = App(self.home, {"USER": "getty"}, io.StringIO(""), io.StringIO(), self.logs.append,
+                  connection_factory=FakeConnection, cwd=self.cwd)
+        app.on_initialize({"clientInfo": {"name": "claude-code"}})
+        app._handle({"event": "UserPromptSubmit", "session_id": "s1", "cwd": self.cwd, "prompt": "hi"})
+        on_message = FakeConnection.instances[0].kw["on_message"]
+        on_message("getty!getty@vhost.example", "agent-irc-1", "carry on")
+        on_message("stranger!x@elsewhere", "agent-irc-1", "ignore me")
+        report = app.inbox.report()
+        self.assertIn("carry on", report)
+        self.assertNotIn("ignore me", report)
+
+    def test_a_session_config_without_listen_turns_it_off_again(self):
+        self.settings(listen=True, listen_from=["*"])
+        app = App(self.home, {"USER": "getty"}, io.StringIO(""), io.StringIO(), self.logs.append,
+                  connection_factory=FakeConnection, cwd=self.cwd)
+        app.on_initialize({"clientInfo": {"name": "claude-code"}})
+        self.assertTrue(app.inbox.listening)
+        self.settings()  # the session's own load reads the file again
+        app._handle({"event": "UserPromptSubmit", "session_id": "s1", "cwd": self.cwd, "prompt": "hi"})
+        self.assertFalse(app.inbox.listening)
 
     def test_no_config_means_no_connections(self):
         os.remove(os.path.join(self.home, ".claude", "settings.json"))

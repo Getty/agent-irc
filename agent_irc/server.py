@@ -11,6 +11,7 @@ import time
 from agent_irc import __version__, mcp
 from agent_irc.config import load_config
 from agent_irc.events import Session
+from agent_irc.inbound import Inbox
 from agent_irc.irc import FloodBucket, IrcConnection
 from agent_irc.text import nick_base
 
@@ -29,7 +30,7 @@ def _usable_session_id(value):
 
 
 class App:
-    def __init__(self, home, env, stdin, stdout, log, connection_factory=IrcConnection, debug=None):
+    def __init__(self, home, env, stdin, stdout, log, connection_factory=IrcConnection, debug=None, cwd=None):
         self.home = home
         self.env = env
         self.stdin = stdin
@@ -37,6 +38,8 @@ class App:
         self.log = log
         self.debug = debug
         self.connection_factory = connection_factory
+        self.cwd = cwd or os.getcwd()
+        self.inbox = Inbox(log=log)
         self.harness = "agent"
         self.level = None
         self.session = None
@@ -51,6 +54,12 @@ class App:
     def on_initialize(self, params):
         self.harness = detect_harness(params.get("clientInfo"))
         self.log("agent-irc %s: initialized by %s" % (__version__, self.harness))
+        # tools/list follows initialize and is the only time the harness asks
+        # what this server offers, long before the first event names a session
+        # -- so whether read_messages exists has to be decided from the config
+        # here, off the process's own cwd. Quietly: the session's own load
+        # does the logging, and does it with the cwd the harness reports.
+        self._listen(load_config(self.harness, self.cwd, self.home, self.env))
 
     def on_event(self, arguments):
         self.queue.put(dict(arguments))
@@ -58,7 +67,8 @@ class App:
     def run(self):
         self.worker.start()
         try:
-            mcp.serve(self.stdin, self.stdout, self.on_initialize, self.on_event, self.log, __version__)
+            mcp.serve(self.stdin, self.stdout, self.on_initialize, self.on_event, self.log, __version__,
+                      inbox=self.inbox)
         finally:
             self.shutdown()
 
@@ -117,14 +127,22 @@ class App:
                 # start+end with a false "0 turns" summary. Stay quiet.
                 self.log("agent-irc: SessionEnd with no prior state, staying quiet")
                 return
-            cwd = str(ev.get("cwd") or os.getcwd())
+            cwd = str(ev.get("cwd") or self.cwd)
             config = load_config(self.harness, cwd, self.home, self.env, self.log)
             self.level = config.level
+            self._listen(config)
             self.session = Session(self.harness, self.level, cwd, self.home, debug=self.debug)
             self._connect(config, cwd, str(ev["session_id"]))
         for line in self.session.handle(ev):
             for connection in self.connections:
                 connection.send_message(line)
+
+    def _listen(self, config):
+        """Inbound is opt-in and denies by default (see agent_irc.inbound)."""
+        if config.listen:
+            self.inbox.enable(config.listen_from)
+        else:
+            self.inbox.disable()
 
     def _connect(self, config, cwd, session_id):
         by_server = {}
@@ -138,7 +156,7 @@ class App:
             connection = self.connection_factory(
                 server, channels, nick_base(cwd), realname, self.log,
                 bucket=FloodBucket(burst=config.flood_burst, interval=config.flood_interval),
-                queue_limit=config.queue_limit)
+                queue_limit=config.queue_limit, on_message=self.inbox.add)
             connection.start()
             self.connections.append(connection)
             self.log("agent-irc: connecting to %s for %s" % (server.label, " ".join(channels)))

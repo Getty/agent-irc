@@ -24,7 +24,7 @@ bin/agent-irc                entry point
 agent_irc/text.py            string helpers            agent_irc/irc.py     connection thread
 agent_irc/config.py          settings, trust, merge    agent_irc/mcp.py     JSON-RPC loop
 agent_irc/usage.py           transcript readers        agent_irc/server.py  wiring
-agent_irc/events.py          event → lines
+agent_irc/events.py          event → lines             agent_irc/inbound.py inbox, allowlist
 tests/                       unittest; tests/fakeirc.py is the fake ircd
 ```
 
@@ -41,7 +41,11 @@ tests/                       unittest; tests/fakeirc.py is the fake ircd
   never takes that path, which is why
   `tests/test_config_files.py::ReaderTests::test_toml_namespace_fallback`
   forces it with `mock.patch.object(config, "_load_toml", return_value=None)`;
-  keep asserting the real keys there.
+  keep asserting the real keys there. The same thing happened again in 0.2.0,
+  one value type further along: `listen` is a **boolean**, which the fallback
+  also did not know, so inbound would have been dead on Python < 3.11 while
+  working everywhere else. Booleans are in now — the next new type will not
+  be, so check this list before adding a setting.
 - The MCP loop is the only writer to stdout. Everything else logs to stderr.
 - `tools/call` must return immediately. Formatting, transcript reads and IRC
   I/O happen on other threads.
@@ -283,6 +287,29 @@ for the case where it might otherwise run twice. Covered by
 `tests/test_end_to_end.py`'s `test_sigterm_sends_quit`, `test_sigint_sends_quit`
 and `test_sigint_then_sigterm_still_sends_quit`, and
 `tests/test_server.py::AppTests::test_shutdown_is_idempotent`.
+
+**Inbound is a pull, and that is not a design preference.** Neither harness
+lets an MCP server wake a session that is idle at its prompt: there is no
+server→client notification either one turns into a turn, and a hook only fires
+when the session is already doing something. So `listen` collects into
+`agent_irc/inbound.Inbox` and the agent has to call `read_messages` to get
+anything — which only a looping session does. Two consequences worth keeping
+in mind when touching this: the inbox has to be bounded (a session may never
+call, and a channel keeps talking — 200 messages, oldest dropped), and the
+allowlist has to deny by default, because everything in there is text a
+stranger typed that ends up in the agent's context. `listen_from` is matched
+against the whole `nick!user@host` with `fnmatch`, so a bare `vhost.example`
+matches nothing; it takes `*!*@vhost.example`.
+
+**`tools/list` happens before any event, so the listen decision cannot wait
+for one.** The harness asks what tools the server has right after
+`initialize`, long before the first `UserPromptSubmit` names a session or a
+cwd. That is why `App.on_initialize` loads the config a second time, off the
+process's own cwd (`App.cwd`, injectable for tests), purely to decide whether
+`read_messages` is listed at all — quietly, since the session's own load does
+the logging with the cwd the harness reports. A session whose real cwd
+disagrees would still be answered by `read_messages` (the call is gated on the
+inbox, not on the tool list); it just would not see the tool offered.
 
 ## Verified against real harnesses
 

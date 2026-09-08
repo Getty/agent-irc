@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+- Add: inbound IRC, opt-in via `listen`. The server keeps direct messages to
+  the session's nick and channel lines that name it, and offers the agent a
+  second tool, `read_messages`, that hands them over and empties the queue --
+  a pull, because neither harness lets an MCP server wake an idle session, so
+  this is for a session that loops. `listen_from` filters by `nick!user@host`
+  and denies by default; the inbox is capped at 200 messages; nothing is ever
+  sent back to IRC and `read_messages` is not even listed unless `listen` is
+  on.
+- Add: the TOML fallback parser (Python < 3.11) reads booleans, without which
+  `listen` would silently never turn on there.
+
 ## 0.1.1 — 2026-09-08
 
 - Fix: the queue cap counted one entry per channel, so a connection with two

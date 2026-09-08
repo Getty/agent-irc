@@ -8,6 +8,7 @@ import ssl
 import threading
 import time
 
+from agent_irc.inbound import is_channel, mentions, unwrap_ctcp
 from agent_irc.text import cut_bytes, wrap_payload
 
 # RFC 1459: the whole line, CRLF included, must fit 512 bytes -- and the line
@@ -89,7 +90,7 @@ class IrcConnection(threading.Thread):
     """One IRC server: connects, registers, joins channels, delivers queued lines."""
 
     def __init__(self, server, channels, nick_base, realname, log, wait=None,
-                 clock=time.monotonic, bucket=None, queue_limit=QUEUE_LIMIT):
+                 clock=time.monotonic, bucket=None, queue_limit=QUEUE_LIMIT, on_message=None):
         super().__init__(daemon=True, name="irc-" + server.label)
         self.server = server
         self.channels = list(channels)
@@ -97,6 +98,7 @@ class IrcConnection(threading.Thread):
         self.realname = realname
         self.log = log
         self.clock = clock
+        self.on_message = on_message
         self.bucket = bucket or FloodBucket(clock=clock)
         self.stop_event = threading.Event()
         self.wait = wait or self.stop_event.wait
@@ -387,8 +389,30 @@ class IrcConnection(threading.Thread):
             self.nick = params[-1]
             if self.mask:
                 self.mask = self.nick + "!" + self.mask.split("!", 1)[-1]
+        elif command == "PRIVMSG" and self.on_message is not None and prefix and len(params) >= 2:
+            self._inbound(prefix, params[0], params[-1])
         elif command == "ERROR":
             raise ConnectionError(line)
+
+    def _inbound(self, prefix, target, text):
+        """One PRIVMSG someone else sent, kept only if it is addressed to us.
+
+        A DM is anything whose target is our nick. In a channel we take only
+        the lines that name us: a busy channel is a room the session is
+        reporting into, not its input.
+        """
+        nick = self.nick
+        if not nick or prefix.split("!", 1)[0].lower() == nick.lower():
+            return
+        text = unwrap_ctcp(text)
+        if text is None:
+            return
+        if target.lower() != nick.lower() and not (is_channel(target) and mentions(text, nick)):
+            return
+        try:
+            self.on_message(prefix, target, text)
+        except Exception as e:
+            self.log("agent-irc: inbound message dropped: %r" % e)
 
     def _raw(self, line):
         line = line.replace("\r", " ").replace("\n", " ")

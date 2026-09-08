@@ -128,6 +128,13 @@ class FakeIrcServer:
         with self.lock:
             return list(self.received)
 
+    def send_to_all(self, line):
+        """Push one raw line at every connected client (inbound traffic)."""
+        with self.lock:
+            conns = list(self.connections)
+        for conn in conns:
+            self._send(conn, line)
+
     def wait_for(self, predicate, timeout=5.0):
         deadline = time.time() + timeout
         while time.time() < deadline:

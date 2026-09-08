@@ -25,6 +25,16 @@ directory's name plus a counter (`agent-irc-1`), and the IRC realname carries
 the harness, the session id and the full working directory, which anyone on
 the server can read with `/whois`.
 
+With `listen` on (off by default), information also flows the other way: the
+plugin keeps the direct messages sent to the session's nick and the channel
+lines that name it, and hands them to the agent when it calls `read_messages`.
+Only senders matching `listen_from` are kept, and that list accepts nobody
+until you fill it in. Those messages live in memory, are never written to disk
+and are never sent back to IRC -- but they do become part of what the agent
+reads, so whoever you allow can put text in front of it. Everyone in a channel
+can see the nick, so treat `listen_from` as the whole boundary. The plugin has
+no way to say anything in the channel on the agent's behalf.
+
 Use `ircs://` so the transport is encrypted. Keep passwords in your user-level
 settings, in `.claude/settings.local.json`, or in the environment via
 `${VAR}`; a project file that is committed should not contain them.

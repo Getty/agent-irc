@@ -50,6 +50,8 @@ class Config:
     flood_burst: int = 4
     flood_interval: float = 2.0
     queue_limit: int = 500  # 0 = never drop
+    listen: bool = False  # accept DMs and mentions for the read_messages tool
+    listen_from: List[str] = field(default_factory=list)  # hostmask patterns; empty = nobody
 
 
 # The host is either a name/IPv4, or an IPv6 literal in brackets -- which is
@@ -131,6 +133,7 @@ def read_json_namespace(path, log=None):
 _HEADER_RE = re.compile(r"^\s*\[([^\]]+)\]\s*(?:#.*)?$")
 _STRING_RE = re.compile(r'"((?:[^"\\]|\\.)*)"|\'([^\']*)\'')
 _KEY_RE = re.compile(r"^[ \t]*([A-Za-z0-9_-]+)[ \t]*=[ \t]*", re.MULTILINE)
+_BOOL_RE = re.compile(r"(?:true|false)(?=[ \t]*(?:#|$))", re.MULTILINE)
 # A number only when nothing but blanks or a comment follow it, so a bare
 # TOML date (1979-05-27) is skipped rather than read as its year.
 _NUMBER_RE = re.compile(r"[+-]?(?:0|[1-9](?:_?[0-9])*)(?:\.[0-9](?:_?[0-9])*)?"
@@ -188,11 +191,13 @@ def _toml_number(text):
 
 
 def parse_toml_table(text, table):
-    """Minimal TOML: string, number and string-array values of one table.
+    """Minimal TOML: string, boolean, number and string-array values of one table.
 
-    Fallback for Python < 3.11, which has no tomllib. The numbers matter:
-    without them the tuning keys vanish there and the connection silently
-    runs on the default flood bucket and queue cap.
+    Fallback for Python < 3.11, which has no tomllib. Every value type a
+    config key can take has to be in here: without the numbers the tuning keys
+    vanished there and the connection silently ran on the default flood bucket
+    and queue cap; without booleans `listen` would vanish the same way and
+    inbound would never turn on.
     """
     body = _toml_table_body(text, table)
     result = {}
@@ -209,6 +214,11 @@ def parse_toml_table(text, table):
         if sm:
             result[key] = _toml_unescape(sm)
             pos = sm.end()
+            continue
+        bm = _BOOL_RE.match(body, pos)
+        if bm:
+            result[key] = bm.group(0) == "true"
+            pos = bm.end()
             continue
         nm = _NUMBER_RE.match(body, pos)
         if nm:
@@ -320,11 +330,15 @@ def tuning_value(key, value):
 
 
 def merge_layers(layers):
-    """Named lists: last definition of a name wins whole. Level and tuning
-    numbers: last valid value wins."""
+    """Named lists: last definition of a name wins whole. Level, tuning numbers
+    and the listen settings: last valid value wins.
+
+    The third return value is whatever Config takes as keywords, so a new
+    setting only has to be read here and declared there.
+    """
     lists = {}
     level = "activity"
-    tuning = {}
+    values = {}
     for layer in layers:
         if not isinstance(layer, dict):
             continue
@@ -336,8 +350,12 @@ def merge_layers(layers):
             elif key in TUNING_KEYS:
                 number = tuning_value(key, value)
                 if number is not None:
-                    tuning[key] = number
-    return lists, level, tuning
+                    values[key] = number
+            elif key == "listen" and isinstance(value, bool):
+                values[key] = value
+            elif key == "listen_from" and isinstance(value, list):
+                values[key] = [v for v in value if isinstance(v, str)]
+    return lists, level, values
 
 
 def resolve_targets(lists, env, default_user, log=None):
@@ -379,6 +397,6 @@ def load_config(harness, cwd, home, env, log=None):
         _log(log, "agent-irc: %s is not trusted by %s, project config ignored" % (cwd, harness))
     reader = read_toml_namespace if harness == "codex" else read_json_namespace
     layers = [reader(path, log) for path in config_files(harness, cwd, home, trusted)]
-    lists, level, tuning = merge_layers(layers)
+    lists, level, values = merge_layers(layers)
     default_user = env.get("USER") or env.get("LOGNAME") or "agent"
-    return Config(resolve_targets(lists, env, default_user, log), level, **tuning)
+    return Config(resolve_targets(lists, env, default_user, log), level, **values)

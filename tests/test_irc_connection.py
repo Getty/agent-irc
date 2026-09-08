@@ -38,9 +38,10 @@ class ConnectionTests(unittest.TestCase):
     def server(self, fake, password=None):
         return Server("irc", "127.0.0.1", fake.port, "getty", password, False)
 
-    def connect(self, fake, password=None, channels=("#a", "#b"), taken=()):
+    def connect(self, fake, password=None, channels=("#a", "#b"), taken=(), on_message=None):
         conn = IrcConnection(self.server(fake, password), list(channels), "agent-irc", "claude e873 ~/dev/agent-irc",
-                             self.logs.append, wait=lambda seconds: None, bucket=fast_bucket())
+                             self.logs.append, wait=lambda seconds: None, bucket=fast_bucket(),
+                             on_message=on_message)
         conn.start()
         self.addCleanup(conn.close, "test over", 2.0)
         return conn
@@ -247,6 +248,57 @@ class ConnectionTests(unittest.TestCase):
         self.assertIn("PRIVMSG #late :queued early", lines)
         self.assertLess(lines.index("JOIN #late"), lines.index("PRIVMSG #late :queued early"))
         self.assertLess(lines.index("PRIVMSG #late :queued early"), lines.index("QUIT :bye early"))
+
+
+class InboundTests(unittest.TestCase):
+    """What the connection hands to the inbox: DMs, and channel lines naming us."""
+
+    def setUp(self):
+        self.logs = []
+        self.got = []
+        self.fake = FakeIrcServer()
+        self.addCleanup(self.fake.close)
+        conn = IrcConnection(Server("irc", "127.0.0.1", self.fake.port, "getty", None, False), ["#a"],
+                             "agent-irc", "claude e873 ~/dev/agent-irc", self.logs.append,
+                             wait=lambda seconds: None, bucket=fast_bucket(),
+                             on_message=lambda *m: self.got.append(m))
+        conn.start()
+        self.addCleanup(conn.close, "test over", 2.0)
+        self.conn = conn
+        self.assertTrue(self.fake.wait_for(lambda ls: "JOIN #a" in ls))
+
+    def send(self, line):
+        self.fake.send_to_all(line)
+
+    def test_a_direct_message_arrives(self):
+        self.send(":getty!getty@vhost.example PRIVMSG agent-irc-1 :carry on")
+        self.assertTrue(wait_until(lambda: self.got), self.logs)
+        self.assertEqual(self.got, [("getty!getty@vhost.example", "agent-irc-1", "carry on")])
+
+    def test_a_channel_line_arrives_only_when_it_names_us(self):
+        self.send(":getty!getty@vhost.example PRIVMSG #a :something unrelated")
+        self.send(":getty!getty@vhost.example PRIVMSG #a :agent-irc-1: status?")
+        self.assertTrue(wait_until(lambda: self.got), self.logs)
+        self.assertEqual(self.got, [("getty!getty@vhost.example", "#a", "agent-irc-1: status?")])
+
+    def test_our_own_line_is_never_inbound(self):
+        self.send(":agent-irc-1!u@h PRIVMSG #a :agent-irc-1 said this")
+        self.send(":getty!getty@vhost.example PRIVMSG agent-irc-1 :after")
+        self.assertTrue(wait_until(lambda: self.got), self.logs)
+        self.assertEqual([m[2] for m in self.got], ["after"])
+
+    def test_ctcp_is_filtered_and_an_action_is_unwrapped(self):
+        self.send(":getty!getty@vhost.example PRIVMSG agent-irc-1 :\x01VERSION\x01")
+        self.send(":getty!getty@vhost.example PRIVMSG agent-irc-1 :\x01ACTION waves\x01")
+        self.assertTrue(wait_until(lambda: self.got), self.logs)
+        self.assertEqual([m[2] for m in self.got], ["* waves"])
+
+    def test_a_failing_inbox_does_not_kill_the_connection(self):
+        self.conn.on_message = lambda *a: 1 / 0
+        self.send(":getty!getty@vhost.example PRIVMSG agent-irc-1 :boom")
+        self.assertTrue(wait_until(lambda: any("inbound message dropped" in l for l in self.logs)), self.logs)
+        self.conn.send_message("still here")
+        self.assertTrue(self.fake.wait_for(lambda ls: "PRIVMSG #a :still here" in ls))
 
 
 if __name__ == "__main__":

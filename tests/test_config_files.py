@@ -21,6 +21,8 @@ level = "full"
 flood_burst = 2000
 flood_interval = 0.0005
 queue_limit = 0
+listen = true
+listen_from = ["getty!*@vhost.example"]
 ignored = 3
 
 [other]
@@ -37,6 +39,10 @@ class TomlFallbackTests(unittest.TestCase):
         self.assertEqual(t["flood_burst"], 2000)
         self.assertEqual(t["flood_interval"], 0.0005)
         self.assertEqual(t["queue_limit"], 0)
+        # Same trap, second value type: a boolean. Without it `listen` is
+        # dropped below 3.11 and inbound silently never turns on there.
+        self.assertIs(t["listen"], True)
+        self.assertEqual(t["listen_from"], ["getty!*@vhost.example"])
         self.assertEqual(t["ignored"], 3)  # parsed here, dropped by merge_layers
 
     def test_parse_quoted_table_name(self):
@@ -68,10 +74,15 @@ class TomlFallbackTests(unittest.TestCase):
         self.assertIsInstance(t["a"], int)
         self.assertIsInstance(t["d"], float)
 
-    def test_values_that_are_not_strings_or_numbers_are_skipped(self):
-        # A bare date must not be read as the year, and a key we cannot
-        # represent is left out rather than guessed at.
-        t = config.parse_toml_table('[agent-irc]\nd = 1979-05-27\nb = true\nlevel = "full"\n', "agent-irc")
+    def test_booleans(self):
+        t = config.parse_toml_table('[agent-irc]\nlisten = true\nother = false  # comment\n', "agent-irc")
+        self.assertEqual(t, {"listen": True, "other": False})
+        self.assertIsInstance(t["listen"], bool)
+
+    def test_values_of_a_type_we_cannot_represent_are_skipped(self):
+        # A bare date must not be read as the year, and a key whose value this
+        # parser has no case for is left out rather than guessed at.
+        t = config.parse_toml_table('[agent-irc]\nd = 1979-05-27\nt = 07:32:00\nlevel = "full"\n', "agent-irc")
         self.assertEqual(t, {"level": "full"})
 
     def test_unterminated_array_keeps_what_it_read(self):
@@ -109,6 +120,7 @@ class ReaderTests(unittest.TestCase):
         t = config.read_toml_namespace(p)
         self.assertEqual(t["channels"], ["ircs://u:p@h/#a", "irc://h/#b"])
         self.assertEqual(t["level"], "full")
+        self.assertIs(t["listen"], True)
 
     def test_toml_namespace_fallback(self):
         p = self.write("config.toml", CODEX_TOML)

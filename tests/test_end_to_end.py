@@ -100,6 +100,68 @@ class EndToEndTests(unittest.TestCase):
             self.assertTrue(any(l.startswith("PRIVMSG #agents :⚙ shell 0.") and l.endswith(": bash -lc ls") for l in lines), lines)
             self.assertIn("initialized by codex", err)
 
+    def test_an_irc_message_reaches_the_agent_through_read_messages(self):
+        """The one inbound path: a DM waits until the agent asks for it.
+
+        Nothing wakes the session -- neither harness lets an MCP server do
+        that -- so the message sits in the inbox until a tools/call fetches
+        it, which is what a looping agent does once per iteration.
+        """
+        fake = FakeIrcServer()
+        self.addCleanup(fake.close)
+        with tempfile.TemporaryDirectory() as tmp:
+            home = os.path.join(tmp, "home")
+            cwd = os.path.join(tmp, "proj")
+            os.makedirs(os.path.join(home, ".claude"))
+            os.makedirs(cwd)
+            with open(os.path.join(home, ".claude", "settings.json"), "w") as f:
+                json.dump({"agent-irc": {"channels": ["irc://127.0.0.1:%d/#agents" % fake.port],
+                                         "listen": True,
+                                         "listen_from": ["getty!*@vhost.example"]}}, f)
+            env = dict(os.environ, HOME=home, USER="getty")
+            proc = subprocess.Popen([sys.executable, os.path.join(ROOT, "bin", "agent-irc")], cwd=cwd, env=env,
+                                    stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            self.addCleanup(proc.kill)
+
+            def call(id_, method, params):
+                proc.stdin.write(rpc(id_, method, params))
+                proc.stdin.flush()
+                return json.loads(proc.stdout.readline())
+
+            call(1, "initialize", {"protocolVersion": "2025-06-18", "clientInfo": {"name": "claude-code"}})
+            listed = call(2, "tools/list", {})
+            self.assertEqual([t["name"] for t in listed["result"]["tools"]], ["event", "read_messages"])
+
+            call(3, "tools/call", {"name": "event", "arguments": {"event": "UserPromptSubmit", "session_id": SID,
+                                                                  "cwd": cwd, "prompt": "hi"}})
+            self.assertTrue(fake.wait_for(lambda ls: "JOIN #agents" in ls))
+            fake.send_to_all(":stranger!x@elsewhere PRIVMSG proj-1 :ignore me")
+            fake.send_to_all(":getty!getty@vhost.example PRIVMSG #agents :not for anyone")
+            fake.send_to_all(":getty!getty@vhost.example PRIVMSG proj-1 :carry on")
+            fake.send_to_all(":getty!getty@vhost.example PRIVMSG #agents :proj-1: and this")
+
+            deadline = time.time() + 10
+            report = ""
+            while time.time() < deadline:
+                report = call(4, "tools/call", {"name": "read_messages", "arguments": {}})["result"]["content"][0]["text"]
+                if "and this" in report:
+                    break
+                time.sleep(0.1)
+            self.assertIn("carry on", report)
+            self.assertIn("→ dm:", report)
+            self.assertIn("→ #agents: proj-1: and this", report)
+            self.assertNotIn("ignore me", report, "the allowlist let a stranger through")
+            self.assertNotIn("not for anyone", report, "a channel line that never named us was kept")
+            self.assertIn("Untrusted", report)
+
+            drained = call(5, "tools/call", {"name": "read_messages", "arguments": {}})["result"]["content"][0]["text"]
+            self.assertIn("No IRC messages waiting.", drained)
+
+            out, err = proc.communicate("", timeout=20)
+            self.assertEqual(proc.returncode, 0, err)
+        # Nothing of the inbound traffic goes back out to IRC: read-only.
+        self.assertFalse([l for l in fake.lines() if "carry on" in l or "and this" in l], fake.lines())
+
     def start_session(self, fake, tmp):
         home = os.path.join(tmp, "home")
         cwd = os.path.join(tmp, "proj")

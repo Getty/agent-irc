@@ -45,6 +45,20 @@ class MergeTests(unittest.TestCase):
                                              "queue_limit": -5, "level": True}])
         self.assertEqual(tuning, {})
 
+    def test_listen_is_off_until_a_layer_says_otherwise(self):
+        self.assertEqual(config.merge_layers([{}])[2], {})
+        self.assertEqual(config.merge_layers([{"listen": True}])[2], {"listen": True})
+        self.assertEqual(config.merge_layers([{"listen": True}, {"listen": False}])[2], {"listen": False})
+
+    def test_listen_from_is_one_list_and_the_last_layer_wins(self):
+        _, _, values = config.merge_layers([{"listen_from": ["a!*@b.example"]},
+                                            {"listen_from": ["c!*@d.example", 5]}])
+        self.assertEqual(values, {"listen_from": ["c!*@d.example"]})
+
+    def test_listen_nonsense_is_ignored(self):
+        _, _, values = config.merge_layers([{"listen": "yes", "listen_from": "getty!*@vhost"}])
+        self.assertEqual(values, {})
+
     def test_ignores_junk(self):
         lists, _, _ = config.merge_layers([{"channels": "notalist", "Channels": [], "x_channels_y": [], "foo": 1},
                                         None, {"team_channels": [A + "#t", 5]}])
@@ -119,6 +133,25 @@ class LoadConfigTests(unittest.TestCase):
         cfg = config.load_config("codex", self.cwd, self.home, {"USER": "me"})
         self.assertEqual(targets(cfg), [("a.example", "#agents"), ("a.example", "#log"), ("a.example", "#simpici")])
         self.assertEqual(cfg.level, "subactivity")
+
+    def test_listen_settings_reach_the_config(self):
+        self.write("home/.claude/settings.json", {"agent-irc": {
+            "channels": [A + "#agents"], "listen": True, "listen_from": ["getty!*@vhost.example"]}})
+        cfg = config.load_config("claude", self.cwd, self.home, {"USER": "me"})
+        self.assertIs(cfg.listen, True)
+        self.assertEqual(cfg.listen_from, ["getty!*@vhost.example"])
+
+    def test_listen_is_off_and_empty_by_default(self):
+        cfg = config.load_config("claude", self.cwd, self.home, {})
+        self.assertIs(cfg.listen, False)
+        self.assertEqual(cfg.listen_from, [])
+
+    def test_a_project_may_not_widen_the_allowlist_untrusted(self):
+        self.write("home/.claude/settings.json", {"agent-irc": {
+            "channels": [A + "#agents"], "listen": True, "listen_from": ["getty!*@vhost.example"]}})
+        self.write("proj/.claude/settings.json", {"agent-irc": {"listen_from": ["*"]}})
+        cfg = config.load_config("claude", self.cwd, self.home, {"USER": "me"})
+        self.assertEqual(cfg.listen_from, ["getty!*@vhost.example"])
 
     def test_no_config_at_all(self):
         cfg = config.load_config("claude", self.cwd, self.home, {})

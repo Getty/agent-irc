@@ -33,6 +33,10 @@ same house style as `briefing`.
 ## 2. Non-goals (v1)
 
 - No commands from IRC back into the session. Read-only mirror.
+  **[corrected in 0.2.0]** Still nothing is *sent* to IRC and nothing wakes a
+  session, but an opt-in `listen` collects DMs and mentions for the agent to
+  fetch with a `read_messages` tool. The mirror stays one-way; the inbox is a
+  pull. See README's "Listening back" and `agent_irc/inbound.py`.
 - No cost in currency. Token counts only; pricing tables are not maintained.
 - No SASL or NickServ. The ircd `PASS` password is the only authentication.
 - No channel keys (`JOIN #chan key`).

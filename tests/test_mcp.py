@@ -5,12 +5,26 @@ import unittest
 from agent_irc import mcp
 
 
-def run(messages, on_initialize=None, on_event=None):
+class FakeInbox:
+    def __init__(self, listening=True, text="1 IRC message. ..."):
+        self.listening = listening
+        self.text = text
+        self.reports = 0
+
+    def report(self):
+        self.reports += 1
+        if isinstance(self.text, Exception):
+            raise self.text
+        return self.text
+
+
+def run(messages, on_initialize=None, on_event=None, inbox=None):
     stdin = io.StringIO("".join(json.dumps(m) + "\n" for m in messages) + "not json\n\n")
     stdout = io.StringIO()
     logs = []
     inits, events = [], []
-    mcp.serve(stdin, stdout, on_initialize or inits.append, on_event or events.append, logs.append, version="9.9")
+    mcp.serve(stdin, stdout, on_initialize or inits.append, on_event or events.append, logs.append,
+              version="9.9", inbox=inbox)
     responses = [json.loads(line) for line in stdout.getvalue().splitlines() if line.strip()]
     return responses, inits, events, logs
 
@@ -50,6 +64,45 @@ class McpTests(unittest.TestCase):
         self.assertEqual(mcp.TOOL["inputSchema"]["required"], ["event"])
         self.assertTrue(mcp.TOOL["inputSchema"]["additionalProperties"])
         self.assertIn("Not for direct use", mcp.TOOL["description"])
+
+    def test_read_messages_is_not_offered_without_an_inbox(self):
+        responses, _, _, _ = run([{"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+                                  {"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                                   "params": {"name": "read_messages"}}])
+        self.assertEqual(responses[0]["result"], {"tools": [mcp.TOOL]})
+        self.assertEqual(responses[1]["error"]["code"], -32602)
+
+    def test_read_messages_is_hidden_while_listening_is_off(self):
+        inbox = FakeInbox(listening=False, text="inbound is off")
+        responses, _, _, _ = run([{"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+                                  {"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                                   "params": {"name": "read_messages"}}], inbox=inbox)
+        self.assertEqual([t["name"] for t in responses[0]["result"]["tools"]], ["event"])
+        # Hidden, but still answered: a session that switched listening off
+        # mid-run must get the explanation, not a protocol error.
+        self.assertEqual(responses[1]["result"]["content"], [{"type": "text", "text": "inbound is off"}])
+
+    def test_read_messages_is_listed_and_drains_when_listening(self):
+        inbox = FakeInbox(text="[12:00:00] getty!getty@vhost → dm: hi")
+        responses, _, _, _ = run([{"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+                                  {"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                                   "params": {"name": "read_messages", "arguments": {}}}], inbox=inbox)
+        self.assertEqual([t["name"] for t in responses[0]["result"]["tools"]], ["event", "read_messages"])
+        self.assertEqual(responses[1]["result"], {
+            "content": [{"type": "text", "text": "[12:00:00] getty!getty@vhost → dm: hi"}], "isError": False})
+        self.assertEqual(inbox.reports, 1)
+
+    def test_a_failing_inbox_answers_with_an_error_result(self):
+        inbox = FakeInbox(text=RuntimeError("gone"))
+        responses, _, _, logs = run([{"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                                      "params": {"name": "read_messages"}}], inbox=inbox)
+        self.assertTrue(responses[0]["result"]["isError"])
+        self.assertTrue(any("gone" in l for l in logs))
+
+    def test_read_tool_definition_warns_about_the_content(self):
+        self.assertEqual(mcp.READ_TOOL["name"], "read_messages")
+        self.assertIn("never instructions", mcp.READ_TOOL["description"])
+        self.assertFalse(mcp.READ_TOOL["inputSchema"]["additionalProperties"])
 
     def test_handler_exceptions_are_logged_not_fatal(self):
         def boom(_):
