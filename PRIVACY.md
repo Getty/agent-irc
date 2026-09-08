@@ -40,8 +40,9 @@ settings, in `.claude/settings.local.json`, or in the environment via
 `${VAR}`; a project file that is committed should not contain them.
 
 The plugin reads: your harness settings files, the harness trust markers
-(`~/.claude.json`, `~/.codex/config.toml`), and the session transcripts the
-harness names in its hook events. It writes nothing to disk itself — but its
+(`~/.claude.json`, `~/.codex/config.toml`, or the same files under
+`CLAUDE_CONFIG_DIR` / `CODEX_HOME` when those are set), and the session
+transcripts the harness names in its hook events. It writes nothing to disk itself — but its
 stderr goes wherever the harness keeps its MCP server logs, and with
 `AGENT_IRC_DEBUG=1` that stderr includes every raw hook event, prompt texts
 among them.

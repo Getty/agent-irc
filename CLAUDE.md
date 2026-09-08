@@ -10,7 +10,8 @@ file is guidance for working on the plugin itself.
 The session process is the plugin's own MCP server (`bin/agent-irc`). The
 harness starts it at session start and kills it at session end; a harness
 crash closes stdin and the server quits. Hooks are `mcp_tool` hooks that call
-the server's single tool `event`. Nothing else runs.
+the server's `event` tool; the opt-in `read_messages` is the only other one,
+and the agent calls that itself. Nothing else runs.
 
 ```
 .claude-plugin/plugin.json   Claude Code manifest
@@ -136,8 +137,9 @@ missing from an event may arrive as an empty string or as the literal
 
 **Trust.** Project-level config is honoured only when the harness trusts the
 directory (Claude: `~/.claude.json` `projects[*].hasTrustDialogAccepted`,
-Codex: `[projects."…"] trust_level = "trusted"`), inherited from ancestors.
-Otherwise a cloned repo could point `full`-level prompts at its own server.
+Codex: `[projects."…"] trust_level = "trusted"`), inherited from ancestors;
+both markers are looked for under `CLAUDE_CONFIG_DIR` / `CODEX_HOME` first
+(see the moved-config-directory trap below). Otherwise a cloned repo could point `full`-level prompts at its own server.
 
 **Codex hooks need trust too.** Until the user accepts the hook trust prompt,
 hooks are skipped silently. `codex exec` needs

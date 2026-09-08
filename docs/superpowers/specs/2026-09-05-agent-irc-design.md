@@ -66,9 +66,10 @@ discovery. **[corrected]** The design assumed a dying harness closes stdin;
 neither does. Both end the server with a signal, which `install_signal_handlers`
 catches to run the same shutdown.
 
-**Every hook is an `mcp_tool` hook** that calls the server's single tool
-`event` with the fields of the hook payload. Both harnesses support this hook
-type with `${field}` substitution from the payload. Formatting, transcript
+**Every hook is an `mcp_tool` hook** that calls the server's `event` tool
+with the fields of the hook payload -- the only tool a hook ever calls; the
+opt-in `read_messages` of §6.1 is called by the agent itself. Both harnesses
+support this hook type with `${field}` substitution from the payload. Formatting, transcript
 reading and IRC I/O all happen inside the server.
 
 **The IRC connection is opened lazily** on the first event that carries a
@@ -124,6 +125,12 @@ rely on the harness merging anything.
 Levels are processed in that order, user first. `<cwd>` is the session's
 working directory as reported in the event payload.
 
+**[corrected in 0.2.0]** The user-level directory is the one the harness
+itself uses: `CLAUDE_CONFIG_DIR` and `CODEX_HOME` move it, and the plugin
+follows (`config.config_home`). Codex, though, does not pass `CODEX_HOME` on
+to the MCP server it starts, so there the variable never reaches the plugin
+and `~/.codex` is read regardless -- see `CLAUDE.md`.
+
 Both harnesses tolerate an unknown key. Verified: `claude doctor` and
 `codex doctor` load files containing the namespace without complaint.
 
@@ -154,8 +161,12 @@ level = "activity"
 |---|---|---|
 | `channels`, `<name>_channels` | list of URL strings | a named channel list; any key matching `^([a-z0-9]+_)?channels$` |
 | `level` | `"activity"` (default), `"subactivity"` or `"full"` | how much to send, see §8; each level includes the ones before it |
+| `flood_burst`, `flood_interval`, `queue_limit` | integer ≥ 1, number ≥ 0, integer ≥ 0 | the sending rate and queue cap of §7: lines that may go out back to back (default 4), seconds per line after that (2.0), lines that may wait (500; `0` never drops). Added when `full` turned out to send more than a public server's rate delivers |
+| `listen` | boolean, default `false` | **[0.2.0]** keep direct messages and mentions for the `read_messages` tool (§6.1, §7) |
+| `listen_from` | list of `nick!user@host` patterns | **[0.2.0]** who is accepted: `fnmatch` wildcards, case-insensitive, matched against the whole mask; empty accepts nobody |
 
-Anything else in the namespace is ignored.
+Anything else in the namespace is ignored, and so is a value of the wrong
+type; the last valid value across the levels wins.
 
 ### 5.3 Merge rules
 
@@ -218,6 +229,11 @@ following the same rule the harnesses apply to their own project settings:
 - Codex: `~/.codex/config.toml` → `[projects."<path>"] trust_level =
   "trusted"` for `<cwd>` or any ancestor directory.
 
+**[corrected in 0.2.0]** Both markers move with the config directory of §5.1:
+`<CLAUDE_CONFIG_DIR>/.claude.json` when that file exists (Claude Code moves
+it there along with the rest), `$CODEX_HOME/config.toml` when the variable is
+set.
+
 Both markers were verified to be inherited from ancestors (`/home/getty/dev`
 covers its subdirectories). Untrusted: project and local files are ignored,
 one log line on stderr says so. Unreadable marker file: treated as untrusted.
@@ -225,9 +241,11 @@ one log line on stderr says so. Unreadable marker file: treated as untrusted.
 ### 5.6 TOML parsing
 
 `tomllib` is Python 3.11+. On older interpreters a minimal parser reads
-exactly the `[agent-irc]` table: string values, string arrays (single or
-multi-line), until the next table header. Everything else in the file is
-skipped. Also used for the `[projects."…"]` trust lookup, which is one key.
+exactly the `[agent-irc]` table: **[corrected]** string, boolean and number
+values and string arrays (single or multi-line), until the next table header
+-- every value type a key of §5.2 can take, because a type the parser does not
+know is dropped silently there, and that happened twice (`CLAUDE.md`).
+Everything else in the file is skipped. Also used for the `[projects."…"]` trust lookup, which is one key.
 
 ## 6. Transport
 
@@ -241,8 +259,9 @@ newline-delimited JSON-RPC 2.0:
 | `initialize` | `protocolVersion` echoed from the request, `capabilities: {tools: {}}`, `serverInfo: {name: "agent-irc", version}` |
 | `notifications/initialized` | none |
 | `ping` | `{}` |
-| `tools/list` | one tool, `event` |
+| `tools/list` | `event`; **[0.2.0]** plus `read_messages` when `listen` is on -- decided at `initialize` from the config read off the process's own cwd, because the harness asks before any event names a session |
 | `tools/call` `event` | `{content: [], isError: false}` immediately |
+| `tools/call` `read_messages` | **[0.2.0]** the waiting inbound messages as one text block, headed by a note that it is untrusted data, and the inbox emptied (§7, §11) |
 | anything else | error `-32601` |
 
 The `event` tool's description is *"Transport for agent-irc hooks. Not for
@@ -338,11 +357,14 @@ both lists. The hook returns no decision on any event; `Stop`,
   and hostname checking. SNI is sent.
 - **Reconnect:** on any disconnect the thread retries with backoff 5, 10, 20,
   40, 60, 60… seconds until the session ends. The send queue keeps the last
-  500 lines across reconnects; beyond that the oldest are dropped and one
-  `… dropped N lines` is queued.
-- **Flood control:** token bucket per connection, burst 4 lines, then one
-  line every 2 seconds. Every line goes as `PRIVMSG` to every channel of the
-  connection, each copy counts against the bucket.
+  `queue_limit` lines (§5.2; default 500, `0` unlimited) across reconnects;
+  beyond that the oldest are dropped and one `… dropped N lines` is queued.
+  **[corrected]** It holds logical lines, not per-channel copies: a cap
+  counting copies dropped twice as early on a two-channel connection (0.1.1).
+- **Flood control:** token bucket per connection, `flood_burst` lines back
+  to back, then one every `flood_interval` seconds (§5.2; defaults 4 and 2.0,
+  sized for a public server). Every line goes as `PRIVMSG` to every channel of
+  the connection, each copy counts against the bucket.
 - **Line length:** negotiated per connection, never guessed. What has to fit
   is not the line the client sends but the one the server relays, with our own
   `:nick!user@host ` in front of it: `LINELEN` from the server's `RPL_ISUPPORT`
@@ -354,6 +376,13 @@ both lists. The hook returns no decision on any event; `Stop`,
   into as many `PRIVMSG`s as it needs, at word boundaries, each keeping the
   line's leading indent, each costing its own token from the flood bucket —
   never cut. §8 says what gets shortened with `…` before it ever gets here.
+- **Inbound** **[0.2.0]**: with `listen` on, a `PRIVMSG` addressed to our
+  nick, or to a channel with our nick in it as a whole word, goes to the inbox
+  (`agent_irc/inbound.py`) if the sender's `nick!user@host` matches
+  `listen_from`; a CTCP `ACTION` arrives as `* …`, any other CTCP is dropped,
+  and our own lines are never taken. The inbox holds 200 messages in memory,
+  drops the oldest beyond that and says so on the next read. Nothing is
+  written back.
 - **Quit:** `QUIT :<summary>` where the summary is
   `session ended · 1h12m · 8 turns · 412 tools · 1.2M in / 40k out`. On
   `SessionEnd` the reason is appended when the harness gives one.
@@ -450,10 +479,13 @@ Everything from `subactivity`, plus:
   under the `↩` head the same way;
 - the **full final answer** (`last_assistant_message`) after the `✔` line,
   the same way;
-- the **full command** of a multi-line shell tool call after its `⚙`/`✖` line,
-  the same way — the `[+N lines]` marker in the summary says how many; this is
-  where they are. Single-line commands add nothing, and no other tool has a
-  body.
+- **[corrected]** the **complete `tool_input`** of every tool call after its
+  `⚙`/`✖` line, field by field, each value the same way -- not only a shell
+  command: a `Write` sends the whole file, an `Edit` both of its strings, an
+  MCP call all of its arguments. The head line keeps the value's first line
+  whole instead of the 120-character cut, and a body that would only repeat
+  that head line is left out, so a one-line `Bash` or a plain `Read` still
+  costs one line.
 
 These are *logical* lines of any length. Fitting them to a server is §7's job,
 because the connection is the only thing that knows that server's `LINELEN`
@@ -531,7 +563,12 @@ one debug log line. Never an error to the harness.
   `tool_input` of every call is sent, a written file's entire content
   included. `PRIVACY.md` says so.
 - The server never executes anything it receives, from the harness or from
-  IRC. Incoming IRC traffic is only parsed for `PING`, numerics and `433`/`432`.
+  IRC. Incoming IRC traffic is parsed for `PING`, numerics and the nick and
+  password replies, and **[corrected in 0.2.0]** with `listen` on, for the
+  `PRIVMSG`s the inbox takes (§7). Everything in there is text a stranger
+  typed that ends up in the agent's context, so `listen_from` denies by
+  default, `read_messages` labels what it returns as untrusted data, the inbox
+  is bounded and in memory only, and nothing is ever sent back to IRC.
 
 ## 12. Testing
 
@@ -558,6 +595,11 @@ one debug log line. Never an error to the harness.
   `initialize`, `tools/list`, a sequence of `tools/call` events, then stdin
   closed; the fake IRC server must have seen the expected lines and the
   `QUIT`.
+- **inbound** (0.2.0): the allowlist against whole masks (a bare host matches
+  nothing), whole-word mentions, CTCP, the cap and its drop notice,
+  `read_messages` listed only with `listen` on, and end to end through the
+  fake server: DMs from the allowed mask come back in order, a disallowed
+  sender's never.
 
 ## 13. Distribution
 

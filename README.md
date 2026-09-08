@@ -106,6 +106,11 @@ lists. So with user-level `channels` and `log_channels`:
 Project-level files are read only when the harness trusts the directory,
 so a cloned repository cannot redirect your sessions.
 
+The user-level file follows the harness's own config directory: with
+`CLAUDE_CONFIG_DIR` set, Claude Code's settings are read from there. Codex's
+`CODEX_HOME` would be honoured the same way, but Codex does not pass it on to
+the plugin (see the limitations below).
+
 ### Levels
 
 | `level` | sends |
