@@ -20,6 +20,15 @@
 - Fix: `hooks/hooks.json` no longer declares `Interrupt`, which Claude Code
   does not know (it was ignored at runtime and made `claude plugin validate`
   warn); Codex's copy asks for the 3s timeout Codex enforces there anyway.
+- Docs: `PRIVACY.md` now says that `full` sends the complete input of every
+  tool call -- a written file's whole content included -- and that the nick
+  and realname disclose the project directory and the session id.
+- Docs: the README gained a glyph legend, the `==== … WAITING FOR INPUT ====`
+  idle line it never documented, where the nick comes from, and the
+  reconnect backoff. The design doc's claims that live verification
+  disproved are corrected in place.
+- Docs: the README carries the plugin's banner, in the same series as the
+  other Getty plugins.
 
 ## 0.1.0 — 2026-09-06
 

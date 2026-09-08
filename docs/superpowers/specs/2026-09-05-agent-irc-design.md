@@ -1,6 +1,13 @@
 # agent-irc — design
 
-*Status: draft for review · 2026-09-05*
+*Status: the design as built · written 2026-09-05, corrected 2026-09-08*
+
+This is the design record, not the manual: [README.md](../../../README.md)
+documents the plugin as it ships. Where a real harness disagreed with the
+design, the text is corrected inline below and marked
+**[corrected]**; every open question of §14 has since been answered live, and
+the answers -- with the traps that came with them -- live in
+[CLAUDE.md](../../../CLAUDE.md).
 
 `agent-irc` is a plugin for Claude Code **and** Codex that mirrors a coding
 session's activity into IRC: what the agent is doing, what it costs, how long
@@ -50,8 +57,10 @@ harness (claude / codex)
 
 **The session client is the plugin's MCP server.** Both harnesses start a
 plugin-bundled stdio MCP server when the session starts and stop it when the
-session ends. If the harness dies, stdin closes and the server quits. There is
-no detached process, no watchdog, no socket, no PID discovery.
+session ends. There is no detached process, no watchdog, no socket, no PID
+discovery. **[corrected]** The design assumed a dying harness closes stdin;
+neither does. Both end the server with a signal, which `install_signal_handlers`
+catches to run the same shutdown.
 
 **Every hook is an `mcp_tool` hook** that calls the server's single tool
 `event` with the fields of the hook payload. Both harnesses support this hook
@@ -244,8 +253,9 @@ preserved and the stdio loop never blocks on IRC or disk.
 The harness is detected from `clientInfo.name` in `initialize` and shown as
 `claude` or `codex` when the name contains one of those words; any other name
 is shown verbatim. The exact names both harnesses send are recorded in
-`CLAUDE.md` once observed (§14). Stdin EOF means the harness is gone: every connection sends
-`QUIT` with the session summary; the dispatcher drain and the connection
+`CLAUDE.md` once observed (§14). **[corrected]** A signal -- not stdin EOF, and
+not a `SessionEnd` event -- means the harness is done with us: every connection
+sends `QUIT` with the session summary; the dispatcher drain and the connection
 joins each have a two-second budget, four seconds worst case.
 
 Log output goes to stderr only, which the harnesses capture in their MCP logs.
@@ -376,7 +386,7 @@ part omitted when zero.
 | PostCompact | `⟲ compacted (auto)` |
 | PostModelSwitch (Claude) | `⇄ model claude-fable-5-1 → claude-opus-5` |
 | SessionEnd | `■ session ended (<reason>) · <summary as in §7>` then `QUIT` |
-| stdin EOF | `QUIT` with the summary, no `PRIVMSG` |
+| `SIGTERM`/`SIGINT`/`SIGHUP` **[corrected]** | `QUIT` with the summary, no `PRIVMSG`. This, not `SessionEnd`, is how a session ends in both harnesses |
 
 **Tool summaries** (`⚙ <tool> <duration>: <summary>`), `summary` cut at 120
 characters:
@@ -511,9 +521,11 @@ one debug log line. Never an error to the harness.
   come from the environment via `${VAR}` so that a committed project file can
   stay free of secrets.
 - Project-level configuration requires harness trust (§5.5).
-- Tool outputs are never sent. Tool inputs are only sent as truncated
-  summaries (§8.1); full commands are visible in a Bash summary of up to 120
-  characters, which is the point of the feature.
+- Tool outputs are never sent. **[corrected]** Tool inputs are truncated
+  summaries below `full` only (§8.1) -- a Bash command is visible up to 120
+  characters, which is the point of the feature; at `full` the whole
+  `tool_input` of every call is sent, a written file's entire content
+  included. `PRIVACY.md` says so.
 - The server never executes anything it receives, from the harness or from
   IRC. Incoming IRC traffic is only parsed for `PING`, numerics and `433`/`432`.
 
@@ -557,7 +569,11 @@ way `briefing`'s does.
 ## 14. Verified against a real harness before release
 
 Documentation leaves these open; each is checked live in the implementation
-phase and the answer recorded in `CLAUDE.md`:
+phase and the answer recorded in `CLAUDE.md`. All eight were answered against
+`claude` 2.1.261/2.1.263 and `codex` 0.153.4 between 2026-09-05 and
+2026-09-08; the table in `CLAUDE.md` holds the results, and question 5's
+answer is the correction marked above -- neither harness delivers a usable
+`SessionEnd`, and neither closes stdin:
 
 1. Claude Code: does `"${tool_input}"` substitute an object or a string, and
    what happens to a placeholder whose field is absent? Determines whether

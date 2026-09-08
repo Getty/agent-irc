@@ -1,3 +1,5 @@
+[![agent-irc — a llama in dungarees at a pneumatic-tube exchange, posting message capsules into #-labelled pigeonholes while small robots send them up from their desks](https://raw.githubusercontent.com/Getty/agent-irc/main/assets/github.png)](https://github.com/Getty/agent-irc)
+
 # agent-irc
 
 Mirrors a Claude Code or Codex session into IRC: what the agent does, how long
@@ -136,6 +138,43 @@ by field:
 A body that would only repeat its head line is left out, so a plain
 `Read` or a one-line `Bash` still costs a single line.
 
+### Reading the channel
+
+The nick is the session's project directory, lowercased and reduced to
+`a-z0-9-`, plus a counter: two sessions in `~/dev/agent-irc` are
+`agent-irc-1` and `agent-irc-2`. The IRC realname carries the harness, the
+session id and the working directory, so a `/whois` on a nick says which
+session it is.
+
+| glyph | line |
+|---|---|
+| `▶` | session start: id, harness, the model if the transcript already names one, working directory |
+| `⇄` | the model, as soon as the session learns it, and every switch after that |
+| `»` | a prompt |
+| `↩` | a background agent woke the session: `↩ agent "…" completed` |
+| `⚙` | a tool call and how long it took |
+| `⇢` `⇠` | a subagent starting and finishing, with its duration and tokens |
+| `✔` | turn end: duration, tool count, tokens, model |
+| `✖` | a tool call or a turn failed |
+| `⚠` | a permission request |
+| `⟲` | the context was compacted |
+| `■` | session end, with its reason and the summary -- or `■ interrupted` |
+
+One line has no glyph of its own because it is meant to catch the eye in a
+busy channel:
+
+```
+<agent-irc-1> ==== … WAITING FOR INPUT ====
+```
+
+The harness sends it when the session has gone idle at its prompt -- Claude
+Code a minute after the turn ended. It is the line that makes a channel of
+running agents worth watching: you see which one is waiting for you.
+
+If the ircd is unreachable the connection retries with a growing backoff (5,
+10, 20, 40, then 60 seconds) while the session runs on; nothing the plugin
+does can block, slow or fail a turn.
+
 ### Sending rate
 
 `full` can mean thousands of lines from one tool call, which the defaults --
@@ -196,7 +235,7 @@ python3 -m unittest discover tests
 ```
 
 Tests use an in-process fake IRC server and never touch the network beyond
-`127.0.0.1`. See `CLAUDE.md` for the two-harness traps.
+`127.0.0.1`; CI runs them on Python 3.9, 3.10, 3.11, 3.12 and 3.13. See `CLAUDE.md` for the two-harness traps.
 
 **Debugging:** set `AGENT_IRC_DEBUG=1` in the environment the harness starts
 the server with to log every raw event, and any transcript read that fails
