@@ -3,3 +3,7 @@ __pycache__/
 .claude/settings.local.json
 .superpowers/
 tmp-verify/
+
+# karr materialized task view -- never commit
+tasks/
+config.yml
