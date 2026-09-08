@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.1 — 2026-09-08
 
 - Fix: the queue cap counted one entry per channel, so a connection with two
   channels filled up after half as many lines and a drop could remove a line
