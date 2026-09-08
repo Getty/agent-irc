@@ -164,6 +164,32 @@ class TrustTests(unittest.TestCase):
         self.assertTrue(config.is_trusted("codex", "/home/g/dev/proj", self.home))
         self.assertFalse(config.is_trusted("codex", "/home/other", self.home))
 
+    def test_codex_trust_follows_codex_home(self):
+        elsewhere = os.path.join(self.home, "moved")
+        os.makedirs(elsewhere)
+        with open(os.path.join(elsewhere, "config.toml"), "w") as f:
+            f.write(CODEX_TOML)
+        env = {"CODEX_HOME": elsewhere}
+        self.assertTrue(config.is_trusted("codex", "/home/g/dev/proj", self.home, env))
+        # and nothing is read from ~/.codex any more
+        self.assertFalse(config.is_trusted("codex", "/home/g/dev/proj", self.home, {"CODEX_HOME": "/nowhere"}))
+
+    def test_claude_trust_follows_claude_config_dir(self):
+        # Claude Code moves .claude.json into CLAUDE_CONFIG_DIR (verified live
+        # 2026-09-08: an isolated config dir gets its own .claude.json).
+        elsewhere = os.path.join(self.home, "cc")
+        os.makedirs(elsewhere)
+        with open(os.path.join(elsewhere, ".claude.json"), "w") as f:
+            json.dump({"projects": {"/home/g/dev": {"hasTrustDialogAccepted": True}}}, f)
+        env = {"CLAUDE_CONFIG_DIR": elsewhere}
+        self.assertTrue(config.is_trusted("claude", "/home/g/dev/proj", self.home, env))
+        self.assertFalse(config.is_trusted("claude", "/home/g/dev/proj", self.home, {"CLAUDE_CONFIG_DIR": "/nowhere"}))
+
+    def test_claude_trust_stays_in_home_without_the_variable(self):
+        with open(os.path.join(self.home, ".claude.json"), "w") as f:
+            json.dump({"projects": {"/home/g/dev": {"hasTrustDialogAccepted": True}}}, f)
+        self.assertTrue(config.is_trusted("claude", "/home/g/dev/proj", self.home, {}))
+
     def test_codex_trust_fallback_parser(self):
         with open(os.path.join(self.home, ".codex", "config.toml"), "w") as f:
             f.write(CODEX_TOML)

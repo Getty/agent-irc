@@ -153,6 +153,24 @@ class LoadConfigTests(unittest.TestCase):
         cfg = config.load_config("claude", self.cwd, self.home, {"USER": "me"})
         self.assertEqual(cfg.listen_from, ["getty!*@vhost.example"])
 
+    def test_codex_home_moves_the_settings_file(self):
+        moved = os.path.join(self.tmp.name, "elsewhere")
+        os.makedirs(moved)
+        with open(os.path.join(moved, "config.toml"), "w") as f:
+            f.write('[agent-irc]\nchannels = ["%s#moved"]\n' % A)
+        self.write("home/.codex/config.toml", '[agent-irc]\nchannels = ["%s#home"]\n' % A)
+        cfg = config.load_config("codex", self.cwd, self.home, {"USER": "me", "CODEX_HOME": moved})
+        self.assertEqual(targets(cfg), [("a.example", "#moved")])
+
+    def test_claude_config_dir_moves_the_settings_file(self):
+        moved = os.path.join(self.tmp.name, "cc")
+        os.makedirs(moved)
+        with open(os.path.join(moved, "settings.json"), "w") as f:
+            json.dump({"agent-irc": {"channels": [A + "#moved"]}}, f)
+        self.write("home/.claude/settings.json", {"agent-irc": {"channels": [A + "#home"]}})
+        cfg = config.load_config("claude", self.cwd, self.home, {"USER": "me", "CLAUDE_CONFIG_DIR": moved})
+        self.assertEqual(targets(cfg), [("a.example", "#moved")])
+
     def test_no_config_at_all(self):
         cfg = config.load_config("claude", self.cwd, self.home, {})
         self.assertEqual(cfg.targets, [])

@@ -12,6 +12,13 @@
   on.
 - Add: the TOML fallback parser (Python < 3.11) reads booleans, without which
   `listen` would silently never turn on there.
+- Fix: the harness settings are read from `CODEX_HOME` / `CLAUDE_CONFIG_DIR`
+  when those are set, instead of always from `~/.codex` and `~/.claude`. A
+  session with a moved config directory ran with no configuration at all and
+  said nothing about it -- the plugin's own Codex bootstrap honours
+  `CODEX_HOME`, so the server started and the hooks fired while the config it
+  read was somebody else's. Claude Code's trust file moves into
+  `CLAUDE_CONFIG_DIR` too, and is now looked for there first.
 
 ## 0.1.1 — 2026-09-08
 

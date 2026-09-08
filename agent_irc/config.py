@@ -275,9 +275,40 @@ def ancestors(path):
         path = parent
 
 
-def claude_trusted(home, cwd):
+def config_home(harness, home, env=None):
+    """The directory the harness keeps its own settings in.
+
+    Both harnesses let the user move it -- Codex with `CODEX_HOME`, Claude
+    Code with `CLAUDE_CONFIG_DIR` -- and then keep everything there, settings
+    and trust markers alike. Reading `~/.codex` or `~/.claude` regardless is
+    how a session with a moved config runs with no configuration at all, and
+    silently: no configuration is a legitimate state, so nothing complains.
+    Found the hard way while testing Codex in an isolated `CODEX_HOME`
+    (2026-09-08): the hooks fired, the server started -- the bootstrap in
+    `.mcp.codex.json` does honour `CODEX_HOME` -- and not one line reached
+    IRC, because the config it read was the one in the real home.
+    """
+    env = env or {}
+    if harness == "codex":
+        return env.get("CODEX_HOME") or os.path.join(home, ".codex")
+    return env.get("CLAUDE_CONFIG_DIR") or os.path.join(home, ".claude")
+
+
+def claude_trust_file(home, env=None):
+    """`<config dir>/.claude.json` when it is there, else `~/.claude.json`.
+
+    Claude Code moves this file into `CLAUDE_CONFIG_DIR` along with the rest
+    (verified live 2026-09-08: an isolated config dir gets its own
+    `.claude.json`), but with no variable set it sits next to `~/.claude`,
+    not inside it.
+    """
+    moved = os.path.join(config_home("claude", home, env), ".claude.json")
+    return moved if os.path.exists(moved) else os.path.join(home, ".claude.json")
+
+
+def claude_trusted(home, cwd, env=None):
     try:
-        with open(os.path.join(home, ".claude.json"), encoding="utf-8") as f:
+        with open(claude_trust_file(home, env), encoding="utf-8") as f:
             data = json.load(f)
     except (OSError, ValueError):
         return False
@@ -291,8 +322,8 @@ def claude_trusted(home, cwd):
     return False
 
 
-def codex_trusted(home, cwd):
-    path = os.path.join(home, ".codex", "config.toml")
+def codex_trusted(home, cwd, env=None):
+    path = os.path.join(config_home("codex", home, env), "config.toml")
     data = _load_toml(path)
     if data is not None:
         projects = data.get("projects") if isinstance(data, dict) else None
@@ -312,10 +343,10 @@ def codex_trusted(home, cwd):
     return False
 
 
-def is_trusted(harness, cwd, home):
+def is_trusted(harness, cwd, home, env=None):
     if harness == "codex":
-        return codex_trusted(home, cwd)
-    return claude_trusted(home, cwd)
+        return codex_trusted(home, cwd, env)
+    return claude_trusted(home, cwd, env)
 
 
 def tuning_value(key, value):
@@ -378,13 +409,15 @@ def resolve_targets(lists, env, default_user, log=None):
     return targets
 
 
-def config_files(harness, cwd, home, trusted):
+def config_files(harness, cwd, home, trusted, env=None):
+    """User-level file first, then the project's -- which are always relative
+    to the project, whatever the user-level directory is."""
     if harness == "codex":
-        files = [os.path.join(home, ".codex", "config.toml")]
+        files = [os.path.join(config_home("codex", home, env), "config.toml")]
         if trusted:
             files.append(os.path.join(cwd, ".codex", "config.toml"))
         return files
-    files = [os.path.join(home, ".claude", "settings.json")]
+    files = [os.path.join(config_home("claude", home, env), "settings.json")]
     if trusted:
         files.append(os.path.join(cwd, ".claude", "settings.json"))
         files.append(os.path.join(cwd, ".claude", "settings.local.json"))
@@ -392,11 +425,11 @@ def config_files(harness, cwd, home, trusted):
 
 
 def load_config(harness, cwd, home, env, log=None):
-    trusted = is_trusted(harness, cwd, home)
+    trusted = is_trusted(harness, cwd, home, env)
     if not trusted:
         _log(log, "agent-irc: %s is not trusted by %s, project config ignored" % (cwd, harness))
     reader = read_toml_namespace if harness == "codex" else read_json_namespace
-    layers = [reader(path, log) for path in config_files(harness, cwd, home, trusted)]
+    layers = [reader(path, log) for path in config_files(harness, cwd, home, trusted, env)]
     lists, level, values = merge_layers(layers)
     default_user = env.get("USER") or env.get("LOGNAME") or "agent"
     return Config(resolve_targets(lists, env, default_user, log), level, **values)
