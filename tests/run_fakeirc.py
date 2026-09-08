@@ -2,10 +2,16 @@
 """Run the fake IRC server standalone: prints the port, then every received line.
 
     python3 tests/run_fakeirc.py [port]
+
+Anything typed on stdin is pushed at every connected client verbatim, which is
+how a live check feeds a session inbound traffic:
+
+    echo ':getty!getty@vhost.example PRIVMSG proj-1 :hello' | ...
 """
 
 import os
 import sys
+import threading
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -26,6 +32,15 @@ if __name__ == "__main__":
         import threading
         threading.Thread(target=server._accept_loop, daemon=True).start()
     print("fake ircd on 127.0.0.1:%d" % server.port, flush=True)
+
+    def inject():
+        for raw in sys.stdin:
+            line = raw.rstrip("\n")
+            if line:
+                server.send_to_all(line)
+                print("<< " + line, flush=True)
+
+    threading.Thread(target=inject, daemon=True).start()
     seen = 0
     try:
         while True:

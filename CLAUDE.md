@@ -311,6 +311,48 @@ the logging with the cwd the harness reports. A session whose real cwd
 disagrees would still be answered by `read_messages` (the call is gated on the
 inbox, not on the tool list); it just would not see the tool offered.
 
+**Codex does not pass `CODEX_HOME` to the MCP server it starts; Claude Code
+does pass `CLAUDE_CONFIG_DIR`.** Live 2026-09-08, `codex` 0.154.0-alpha.6:
+a session started with `CODEX_HOME` pointing at an isolated home used that
+home for everything of its own (auth, sessions, `models_cache.json`) and
+still started an `agent-irc` that reported version 0.1.0 — the copy in
+`~/.codex`, not the 0.1.1 installed in the isolated one. The same bootstrap
+line run by hand picks the right copy when the variable is in its
+environment, so the variable simply is not there for the child:
+
+    echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
+      | CODEX_HOME=/tmp/x python3 -I -c "$(…the .mcp.codex.json bootstrap…)"
+    → agent-irc 0.1.1: initialized      # with the variable
+    → agent-irc 0.1.0: initialized      # without it, from ~/.codex
+
+Consequences: under a custom `CODEX_HOME` the bootstrap either finds nothing
+(and the server exits saying so) or, worse, silently runs a *stale* copy from
+`~/.codex` — which then also reads `~/.codex/config.toml`, i.e. somebody
+else's channels. Nothing in the plugin can fix this from inside; the
+`CODEX_HOME` support in the bootstrap and in `config.config_home` stays for
+the day Codex passes it. Claude Code has no such problem: the same test with
+`CLAUDE_CONFIG_DIR` (an isolated config dir, its own `settings.json`, its own
+`.claude.json`, the plugin installed into it) produced a session that read
+exactly that config and mirrored into the ircd it named — live 2026-09-08
+against `claude` 2.1.263.
+
+**`SubagentStart`/`SubagentStop` are still not delivered in `codex`
+0.154.0-alpha.6.** Re-checked 2026-09-08 the way Task 19 did, with a real
+`spawn_agent` + `wait_agent` round trip: `codex exec` printed
+`UserPromptSubmit`, `PreToolUse`/`PostToolUse` twice (the two collab tool
+calls) and `Stop` — and no subagent hook at all. So the Codex limitations in
+the README are not a 0.153 artefact; they are unchanged in the next version's
+alpha.
+
+**In `-p` (print) mode Claude Code refuses the `SessionEnd` mcp_tool hook
+outright**, with `SessionEnd hook [plugin:agent-irc:irc/event] failed:
+mcp_tool hooks are not available for the 'SessionEnd' hook event (no MCP
+client context)` on stderr (2.1.263, live 2026-09-08). Nothing is lost — the
+closing summary comes from the signal handler either way — and the entry has
+to stay, because in an *interactive* session `/clear` does deliver
+`SessionEnd` to the running process (see the rollover trap above). It is
+noise in headless runs only.
+
 ## Verified against real harnesses
 
 Filled in by the live verification (plan Task 18), 2026-09-05, against
@@ -333,9 +375,11 @@ never produced the evidence (noted why).
 | MCP server started at session start, shared by subagents | yes — one process served the main turn and its Explore subagent's own tool call (2026-09-05) | yes — one `irc` MCP connection for the whole session served the main turn's `Bash` call and the spawned sub-agent's own `wait_agent`/tool calls alike (2026-09-05) |
 | hook-triggered `tools/call` passes without approval | yes, no approval prompt across 5 runs, no config needed (2026-09-05) | yes, no approval prompt across every `codex exec --dangerously-bypass-hook-trust` run once the server-name and field-whitelist fixes were in place (2026-09-05) |
 | `SessionEnd` reaches the server before stdin closes | no — never delivered to a live process: either a *fresh, stateless* reconnect that stays quiet (see trap above), or the original process ended by signal before any `SessionEnd` hook could fire; the harness kills the server with `SIGINT` then `SIGTERM` instead, and `install_signal_handlers` still sends the `QUIT` summary from there — confirmed live, real numbers, 4/4 runs (2026-09-05, Task 20, see trap above) | no — Codex rejects `mcp_tool` hooks on `SessionEnd` outright; the harness ends the server with a plain `SIGTERM` instead (not a dropped pipe, as Task 19 assumed), and `install_signal_handlers` sends the `QUIT` summary from there — confirmed live, real numbers, 3/3 runs (2026-09-05, Task 20, see trap above) |
-| `async: true` keeps delivery order | not always: `PostToolUse` for a parent Agent tool call was observed to arrive before `SubagentStart` for the very subagent it spawned; handled without crashing (2026-09-05) | not observed the same way: `SubagentStart`/`SubagentStop` `mcp_tool` hooks never fired at all in any configuration tried, so there was nothing to compare ordering against (2026-09-05, see trap above) |
+| `async: true` keeps delivery order | not always: `PostToolUse` for a parent Agent tool call was observed to arrive before `SubagentStart` for the very subagent it spawned; handled without crashing (2026-09-05) | not observed the same way: `SubagentStart`/`SubagentStop` `mcp_tool` hooks never fired at all in any configuration tried, so there was nothing to compare ordering against (2026-09-05, see trap above); still true in 0.154.0-alpha.6 (2026-09-08) |
 | `/clear` session rollover | live, interactive through a pty, 2026-09-08: `SessionEnd` reaches the *running* process (`■ session ended (clear)`), the next prompt announces a new session id over the same connection, no re-JOIN | n/a — Codex has no `/clear` reaching an `mcp_tool` hook, and refuses `SessionEnd` outright |
 | idle notification (`Notification`, matcher `idle_prompt`) | yes — `==== … WAITING FOR INPUT ====` exactly 60s after the turn ended, live 2026-09-08 | not observed |
 | `PermissionRequest` reaches IRC | yes — `⚠ permission: AskUserQuestion`, live 2026-09-08 | not observed: could not be triggered from `codex exec` (2026-09-05), which is why its field whitelist stays at the base set |
 | `ircs://` to a self-signed ircd | live 2026-09-08 against ergo's 6697: refused with verification on (clean failure, backoff retry), TLSv1.3 with `?insecure=1`, line delivered | not tested — same connection code, nothing harness-specific |
+| a moved config directory (`CLAUDE_CONFIG_DIR` / `CODEX_HOME`) | passed through to the MCP server: an isolated config dir with its own `settings.json` was the one the session used, live 2026-09-08 | **not** passed: the server started under an isolated `CODEX_HOME` resolved its own copy, and its config, out of `~/.codex` (2026-09-08, see trap above) |
+| inbound `read_messages` | live 2026-09-08: `listen` + `listen_from` in an isolated config, seven DMs from the allowed mask returned in order, the disallowed sender's never; the call itself shows in the mirror as `⚙ read_messages` | not tested — same code path, nothing harness-specific beyond the tool listing |
 | install from the published catalog | live 2026-09-08 in an isolated `CLAUDE_CONFIG_DIR`: `plugin marketplace add Getty/marketplace` + `plugin install agent-irc@getty`, then a real session produced session line, prompt, turn summary and QUIT in the channel | `codex plugin add agent-irc@getty` verified live 2026-09-06 |

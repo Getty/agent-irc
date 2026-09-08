@@ -1,6 +1,6 @@
 {
   "name": "agent-irc",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Mirrors a session's activity into IRC: prompts, tool calls with durations, subagents, token usage. One nick per session.",
   "author": {
     "name": "Torsten Raudssus",

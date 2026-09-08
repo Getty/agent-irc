@@ -256,11 +256,15 @@ long answer -- is split into far fewer messages than a stock 512-byte server
 would need. Running your own also lets you raise the sending rate (see above)
 without antagonising a public server.
 
-**Codex 0.153 limitations:** no `⇢`/`⇠` subagent start/stop lines at any
-level (Codex never delivers the hooks for them); a Codex subagent's own tool
-calls appear as, and count toward, the main turn instead of the subagent;
-and `PermissionRequest`/`PostCompact` carry less detail than on Claude Code.
-See `CLAUDE.md` for why.
+**Codex limitations** (0.153, and unchanged in the 0.154 alpha): no `⇢`/`⇠`
+subagent start/stop lines at any level (Codex never delivers the hooks for
+them); a Codex subagent's own tool calls appear as, and count toward, the
+main turn instead of the subagent; `PermissionRequest`/`PostCompact` carry
+less detail than on Claude Code; and a custom `CODEX_HOME` does not work,
+because Codex does not pass that variable to the MCP server it starts, so the
+plugin looks for itself -- and for your settings -- in `~/.codex` regardless.
+Claude Code's `CLAUDE_CONFIG_DIR` is passed through and does work. See
+`CLAUDE.md` for the measurements.
 
 ## How it works
 

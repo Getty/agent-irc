@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 — 2026-09-08
 
 - Add: inbound IRC, opt-in via `listen`. The server keeps direct messages to
   the session's nick and channel lines that name it, and offers the agent a
@@ -18,7 +18,10 @@
   said nothing about it -- the plugin's own Codex bootstrap honours
   `CODEX_HOME`, so the server started and the hooks fired while the config it
   read was somebody else's. Claude Code's trust file moves into
-  `CLAUDE_CONFIG_DIR` too, and is now looked for there first.
+  `CLAUDE_CONFIG_DIR` too, and is now looked for there first. Verified live on
+  Claude Code 2.1.263; under Codex the variable never reaches the server in
+  the first place (0.154.0-alpha.6, see `CLAUDE.md`), so a custom `CODEX_HOME`
+  stays unsupported there.
 
 ## 0.1.1 — 2026-09-08
 
