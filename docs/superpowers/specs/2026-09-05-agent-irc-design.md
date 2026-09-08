@@ -604,10 +604,11 @@ one debug log line. Never an error to the harness.
 ## 13. Distribution
 
 Repository `Getty/agent-irc`, added to `Getty/marketplace` in both
-`.claude-plugin/marketplace.json` and `.agents/plugins/api_marketplace.json`
-(Codex's actual recognized marketplace manifest filename — verified live,
-2026-09-05, Task 18; `.agents/plugins/marketplace.json` is not one Codex
-looks for), like `briefing`. License Artistic-2.0 to match `briefing`;
+`.claude-plugin/marketplace.json` and `.agents/plugins/marketplace.json`,
+like `briefing`. **[corrected]** The design named
+`.agents/plugins/api_marketplace.json` as the only filename Codex looks for;
+the marketplace ships `marketplace.json`, and `codex plugin add
+agent-irc@getty` installed from it live on 2026-09-06. License Artistic-2.0 to match `briefing`;
 change before the first release if MIT is preferred. Conventional commits,
 `--signoff`. A `CLAUDE.md` documents the two-harness traps found in §14 the
 way `briefing`'s does.
