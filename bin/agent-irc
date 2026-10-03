@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""agent-irc MCP server entry point. Started by the harness, see .mcp.json."""
+"""agent-irc MCP server entry point. Started by the harness, see .mcp.json.
+
+agent-irc is off on Windows. There Claude Code starts agent-irc.exe next to
+this file instead (mcpoff, see winlaunch/): a server that connects, offers
+the tools named below and does nothing, so the mcp_tool hooks stay quiet.
+# mcpoff: tools event
+"""
 
 import os
 import sys

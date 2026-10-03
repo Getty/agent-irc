@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.1 — 2026-10-03
+
+- Windows: agent-irc is off and quiet. Claude Code starts `bin/agent-irc.exe`
+  there, an MCP server that connects and does nothing, so its hooks no longer
+  report a missing server. Nothing reaches IRC from Windows.
+- `.mcp.json` names `bin/agent-irc` itself instead of `python3` with the script
+  as argument; Linux and macOS run it by its shebang.
+
 ## 0.2.0 — 2026-09-08
 
 - Add: inbound IRC, opt-in via `listen`. The server keeps direct messages to

@@ -140,8 +140,18 @@ class ManifestTests(unittest.TestCase):
         # the reference shows.
         m = load(".mcp.json")
         self.assertEqual(set(m), {"mcpServers"})
-        self.assertEqual(m["mcpServers"]["irc"]["command"], "python3")
-        self.assertEqual(m["mcpServers"]["irc"]["args"], ["${CLAUDE_PLUGIN_ROOT}/bin/agent-irc"])
+        # The entry point itself, no interpreter: Linux and macOS run it by its
+        # shebang, Windows runs bin/agent-irc.exe (mcpoff) of the same name.
+        self.assertEqual(m["mcpServers"]["irc"]["command"], "${CLAUDE_PLUGIN_ROOT}/bin/agent-irc")
+        self.assertEqual(m["mcpServers"]["irc"]["args"], [])
+
+    def test_windows_gets_the_off_server(self):
+        import os
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        self.assertTrue(os.path.isfile(os.path.join(root, "bin", "agent-irc.exe")))
+        self.assertTrue(os.access(os.path.join(root, "bin", "agent-irc"), os.X_OK))
+        with open(os.path.join(root, "bin", "agent-irc"), encoding="utf-8") as f:
+            self.assertIn("# mcpoff: tools event\n", f.read())
 
     def test_hooks(self):
         # Interrupt is Codex's event, not Claude Code's: `claude plugin

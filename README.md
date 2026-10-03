@@ -41,6 +41,11 @@ both harnesses end the server process with a signal rather than a
 `SessionEnd` event, and the server catches that signal to send it. See
 `CLAUDE.md` for details.
 
+**Windows** is not supported: there the plugin installs and stays off, quietly.
+Claude Code starts `bin/agent-irc.exe` in place of the server, which connects
+and does nothing, so the hooks report no missing server and nothing reaches
+IRC (see `winlaunch/README.md`).
+
 ## Configure
 
 Configuration lives in the harness's own settings, under the key `agent-irc`.
