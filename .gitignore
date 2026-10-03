@@ -7,3 +7,6 @@ tmp-verify/
 # karr materialized task view -- never commit
 tasks/
 config.yml
+
+# Claude Code worktrees (claude --worktree / isolated agents) -- never commit
+/.claude/worktrees/
