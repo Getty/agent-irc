@@ -1,0 +1,4 @@
+# Line endings stay LF in every checkout, whatever core.autocrlf says: the
+# MCP server entry point is a Python script with a shebang.
+* text=auto eol=lf
+*.exe binary
