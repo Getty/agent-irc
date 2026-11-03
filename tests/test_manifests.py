@@ -130,7 +130,7 @@ class ManifestTests(unittest.TestCase):
 
     def test_versions_match(self):
         import agent_irc
-        self.assertEqual(load(".claude-plugin/plugin.json")["version"], agent_irc.__version__)
+        self.assertNotIn("version", load(".claude-plugin/plugin.json"))
         self.assertEqual(load(".codex-plugin/plugin.json")["version"], agent_irc.__version__)
 
     def test_mcp_json(self):

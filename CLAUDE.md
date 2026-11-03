@@ -14,7 +14,7 @@ the server's `event` tool; the opt-in `read_messages` is the only other one,
 and the agent calls that itself. Nothing else runs.
 
 ```
-.claude-plugin/plugin.json   Claude Code manifest
+.claude-plugin/plugin.json   Claude Code manifest — no `version`: Claude Code takes it from the commit
 .codex-plugin/plugin.json    Codex manifest — its own .mcp.codex.json and hooks/codex.json
 .mcp.json                    Claude Code server: python3 ${CLAUDE_PLUGIN_ROOT}/bin/agent-irc
 .mcp.codex.json              Codex server: python3 -c bootstrap that globs $CODEX_HOME/plugins/cache/*/agent-irc/*/bin/agent-irc
