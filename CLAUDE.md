@@ -53,7 +53,7 @@ tests/                       unittest; tests/fakeirc.py is the fake ircd
 - Never block, deny or rewrite anything in a hook. The hook returns no
   decision on any event.
 - Tests: `python3 -m unittest discover tests`. No network beyond localhost.
-- Conventional commits, `--signoff`.
+- Commits: summary imperative or `<component>: <what>`, no Conventional Commits type (`feat:`, `fix:` …), no `--signoff`.
 
 ## Two-harness traps
 
