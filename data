@@ -1,0 +1,14 @@
+---
+class: standard
+created: 2026-11-26T19:20:57Z
+id: 1
+priority: medium
+started: 2026-11-26T19:21:14Z
+status: todo
+tags:
+- live-check
+title: Re-verify agent-irc live against the current claude
+updated: 2026-11-26T19:21:14Z
+---
+
+CLAUDE.md's Claude Code column was last checked against claude 2.1.263 (2026-09-08). Re-run the rows a harness update can change, in a scratch CLAUDE_CONFIG_DIR against tests/run_fakeirc.py: hook payload fields (still no model?), ${tool_input} substitution, the plugin:agent-irc:irc server reference, the SIGINT/SIGTERM QUIT summary, the -p SessionEnd refusal, /clear rollover and the idle notification (pty), PermissionRequest, read_messages. Report per row: unchanged, or what is different now, with the claude version and date. Owner: agent-irc-live-check; the worker records the result in CLAUDE.md.
