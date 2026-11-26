@@ -1,0 +1,28 @@
+# Write ownership: <path><TAB><owner>. An exact path wins, else the longest
+# directory prefix (a path ending in /). Every tracked path needs a row.
+
+agent_irc/	agent-irc-worker
+agent_irc/__init__.py	agent-irc-release-manager
+bin/	agent-irc-worker
+bin/agent-irc.exe	main
+hooks/	agent-irc-worker
+tests/	agent-irc-worker
+.claude-plugin/	agent-irc-worker
+.codex-plugin/	agent-irc-release-manager
+.mcp.json	agent-irc-worker
+.mcp.codex.json	agent-irc-worker
+.github/	agent-irc-worker
+.cicd/	agent-irc-worker
+docs/	agent-irc-worker
+README.md	agent-irc-worker
+CLAUDE.md	agent-irc-worker
+PRIVACY.md	agent-irc-worker
+Changes	agent-irc-release-manager
+winlaunch/	main
+LICENSE	main
+assets/	main
+.gitignore	main
+.gitattributes	main
+.worktreeinclude	main
+.claude/	main
+OWNERS	main

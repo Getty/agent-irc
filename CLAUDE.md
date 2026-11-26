@@ -385,3 +385,21 @@ never produced the evidence (noted why).
 | a moved config directory (`CLAUDE_CONFIG_DIR` / `CODEX_HOME`) | passed through to the MCP server: an isolated config dir with its own `settings.json` was the one the session used, live 2026-09-08 | **not** passed: the server started under an isolated `CODEX_HOME` resolved its own copy, and its config, out of `~/.codex` (2026-09-08, see trap above) |
 | inbound `read_messages` | live 2026-09-08: `listen` + `listen_from` in an isolated config, seven DMs from the allowed mask returned in order, the disallowed sender's never; the call itself shows in the mirror as `⚙ read_messages` | not tested — same code path, nothing harness-specific beyond the tool listing |
 | install from the published catalog | live 2026-09-08 in an isolated `CLAUDE_CONFIG_DIR`: `plugin marketplace add Getty/marketplace` + `plugin install agent-irc@getty`, then a real session produced session line, prompt, turn summary and QUIT in the channel | `codex plugin add agent-irc@getty` verified live 2026-09-06 |
+
+## The agent team
+
+Start Claude in this folder. The session you talk to hands the work to the right agent.
+
+- `agent-irc-worker`: server code, hooks, manifests, the Codex bootstrap and their tests,
+  and the README, `CLAUDE.md` or spec lines that record what it found.
+- `agent-irc-live-check`: live runs against real `claude`/`codex` and an ircd, in scratch
+  config directories; reports what it saw, writes no repository file.
+- `agent-irc-reviewer`: checks a finished card independently and runs the tests on Python
+  3.13 and 3.9 itself; changes nothing.
+- `agent-irc-release-manager`: commits reviewed work, keeps `Changes`, stamps a version and
+  checks a release on request.
+
+`OWNERS` is the authoritative write-path map. Work is tracked with karr (`karr board`); rules
+in `.claude/rules/agent-irc-rules.md`. `agent-irc-release-manager` commits reviewed work.
+Nothing is pushed, released or posted without your word, unless the project rules allow it:
+the karr board, which goes to `origin` with every change.

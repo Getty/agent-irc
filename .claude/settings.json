@@ -1,0 +1,14 @@
+{
+  "enabledPlugins": {
+    "skilletor@getty": true,
+    "superpowers@claude-plugins-official": true
+  },
+  "extraKnownMarketplaces": {
+    "getty": {
+      "source": {
+        "source": "github",
+        "repo": "Getty/marketplace"
+      }
+    }
+  }
+}
