@@ -1,0 +1,15 @@
+---
+class: standard
+created: 2026-11-26T19:21:06Z
+id: 2
+priority: medium
+started: 2026-11-26T19:21:19Z
+status: todo
+tags:
+- live-check
+- inbound
+title: Run a looping session against read_messages
+updated: 2026-11-26T19:21:19Z
+---
+
+Inbound (0.2.0) was verified live with single read_messages calls, never in a session that loops and reacts, which is what it is for. Drive one through a pty in a scratch CLAUDE_CONFIG_DIR with listen on and a listen_from mask, /loop with an instruction to fetch and react, and feed lines through tests/run_fakeirc.py stdin: from the allowed mask, from a disallowed one, a burst over the 200-message cap. Report what the session did with each and what it cost. Needs: the user's word that this has not been done since 2026-09-08. Owner: agent-irc-live-check.
