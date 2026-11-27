@@ -1,0 +1,27 @@
+---
+claimed_at: 2026-11-27T16:34:18Z
+claimed_by: agent-irc
+class: standard
+completed: 2026-11-27T16:34:21Z
+created: 2026-11-27T14:08:27Z
+id: 10
+priority: medium
+started: 2026-11-27T16:34:21Z
+status: done
+tags:
+- bun-port
+title: 'K7: Start the server through the getty-bun starter'
+updated: 2026-11-27T16:34:21Z
+---
+
+Hub card agent-developer k12, part B (brief ~/briefs/2026-11-27-agent-irc-getty-bun-umbau.md; plan: part A report §4). Branch getty-bun. Path A (G1): mcp_tool hooks stay byte-identical, only the MCP server moves to TypeScript under the getty-bun starter. bootstrap/ from the render (getty-bun-install@agent-bun-runtime v0.1.0, bun 1.4.5); bin/agent-irc a sh wrapper (keeps '# mcpoff: tools event'); .mcp.codex.json a sh -c locator in the consumer (G5 a, G4 a: Windows stays off); agent_irc/ and tests/*.py removed (G6 a). Owner: worker. Depends K6, K2.
+
+2026-11-27 16:20 Worker started K7: copying starters, sh wrapper, sh -c Codex locator (mtime rule kept), bun:test port of the bootstrap test, starter e2e test gated on a mirror env var; Python removal after the last oracle run.
+
+2026-11-27 16:29 Final oracle before removal: Python suite 299/0 OK on 3.13.5 and 3.9.25; /tmp/k9.sInQ/oracle/oracle.ts 6/6 scenarios SAME (exit codes, stdout, IRC lines). Decisions: Codex locator picks newest by mtime of bootstrap/getty-bun.sh via [ -nt ] (ties: last in glob order, as Python's stable sort); no '${' in the sh -c script (printf, not echo); agent_irc/__init__.py left in place: OWNERS gives it to release-manager. Also found: .github/workflows/test.yml still runs python unittest, which exits 5 (NO TESTS RAN) on 3.12+ now -> K8. Main-owned follow-ups: .gitattributes comment, OWNERS agent_irc rows.
+
+2026-11-27 16:29 Done: bootstrap/ = cp -p of the rendered starters (cmp equal, # version 1.4.5); bin/agent-irc a #!/bin/sh wrapper (root from own path, symlinks followed, keeps '# mcpoff: tools event') exec'ing 'sh bootstrap/getty-bun.sh run dist/server.js claude-code'; .mcp.codex.json a sh -c locator under $CODEX_HOME or ~/.codex, newest by mtime, exec 'run dist/server.js codex', not found = stderr + exit 1; Python sources/tests removed. Tests: codex_bootstrap.test.ts, entry.test.ts, starter copy checks in build.test.ts, manifests updated, starter.test.ts e2e gated on AGENT_IRC_BUN_MIRROR. Verified on Bun 1.4.5: typecheck 0; bun test 402 pass/5 skip/0 fail x3; with the local mirror 405 pass/0 fail (first start with install 1675 ms, warm 65-70 ms, SIGTERM 143, SIGINT 130, stdout only JSON-RPC, bunfig/.env not read, nothing in HOME); dist check cmp equal.
+
+2026-11-27 16:33 Review (agent-irc-reviewer): READY, two nits for the worker. Ran on harness Bun 1.4.5 in temp HOME/XDG_CACHE_HOME/BUN_INSTALL_CACHE_DIR/GETTY_HOME: bun install --frozen-lockfile 0; typecheck 0; bun test x2 402 pass/5 skip/0 fail; bun run check 0 (dist matches); cmp bootstrap/getty-bun.{sh,ps1} vs .claude/skills/getty-bun-install/bootstrap equal, '# version 1.4.5'; AGENT_IRC_BUN_MIRROR=file://<temp copy of fixtures/bun-v1.4.5> bun test tests/starter.test.ts 3/3 (install 1689 ms, warm 65-68 ms, 143/130, stdout only JSON-RPC, temp HOME untouched). Python check no longer applies: no Python tests remain. git diff origin/main -- hooks/ .mcp.json .claude-plugin/ empty. bin/agent-irc checked under dash 0.5.12 and bash (spaces, relative, file symlink chain, root symlink, PATH lookup); locator under dash (sub-second -nt, empty/unset CODEX_HOME, no match -> stderr + 1). OWNERS covers every touched path. Removed files referenced only in 'port of' comments. Nits: (1) tests/manifests.test.ts:3 and :133-141 dead Python version test/header; (2) bin/agent-irc:32 cd -- "$dir/.." is logical: a symlinked bin/ DIRECTORY resolves to the link's parent (fails 'cannot open .../bootstrap/getty-bun.sh'), the old realpath did not; cd -P -- "$dir" && cd .. would match. Info: build.test.ts:95 render cmp skips where .claude/skills is absent (gitignored) -> CI check is K8; MCP startup timeout on first install is K9/G3.
+
+2026-11-27 16:34 Committed as 09a3af3 on getty-bun, pushed to origin/getty-bun
