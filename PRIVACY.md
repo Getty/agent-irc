@@ -1,8 +1,15 @@
 # Privacy
 
 agent-irc sends information about your coding session to the IRC servers and
-channels **you** configure. Nothing else. There is no telemetry, no third
-party, no phone-home.
+channels **you** configure. There is no telemetry and no phone-home.
+
+One other connection happens once per machine: the first start of the plugin
+downloads the Bun runtime it runs on (version 1.4.5, checked against a pinned
+SHA-256) from Bun's GitHub releases, `https://github.com/oven-sh/bun/releases`,
+unless another getty-bun plugin has already installed that version. GitHub
+sees an ordinary download request from your address; nothing about your
+session is sent. `GETTY_BUN_MIRROR` points the download at a mirror of your
+choice instead.
 
 What leaves the machine depends on `level`:
 
@@ -42,7 +49,9 @@ settings, in `.claude/settings.local.json`, or in the environment via
 The plugin reads: your harness settings files, the harness trust markers
 (`~/.claude.json`, `~/.codex/config.toml`, or the same files under
 `CLAUDE_CONFIG_DIR` / `CODEX_HOME` when those are set), and the session
-transcripts the harness names in its hook events. It writes nothing to disk itself — but its
-stderr goes wherever the harness keeps its MCP server logs, and with
-`AGENT_IRC_DEBUG=1` that stderr includes every raw hook event, prompt texts
-among them.
+transcripts the harness names in its hook events. The server writes nothing
+to disk itself; the starter writes the downloaded Bun into
+`~/.getty/runtimes/bun/` (or under `GETTY_HOME`), shared by every getty-bun
+plugin. The server's stderr goes wherever the harness keeps its MCP server
+logs, and with `AGENT_IRC_DEBUG=1` that stderr includes every raw hook event,
+prompt texts among them.

@@ -7,64 +7,80 @@ file is guidance for working on the plugin itself.
 
 ## Shape
 
-The session process is the plugin's own MCP server (`bin/agent-irc`). The
-harness starts it at session start and kills it at session end; a harness
-crash closes stdin and the server quits. Hooks are `mcp_tool` hooks that call
-the server's `event` tool; the opt-in `read_messages` is the only other one,
-and the agent calls that itself. Nothing else runs.
+The session process is the plugin's own MCP server, a TypeScript program
+bundled into `dist/server.js` and run on Bun 1.4.5. Claude Code starts
+`bin/agent-irc`, Codex the `sh -c` locator in `.mcp.codex.json`; both exec
+the getty-bun starter (`bootstrap/getty-bun.sh run dist/server.js
+<claude-code|codex>`), which installs the pinned Bun on first use and then
+execs it -- one process, one PID, from the harness's spawn to Bun. The harness
+starts it at session start and kills it at session end; a harness crash closes
+stdin and the server quits. Hooks are `mcp_tool` hooks that call the server's
+`event` tool; the opt-in `read_messages` is the only other one, and the agent
+calls that itself. Nothing else runs. The Python server this replaced
+(`agent_irc/`, removed in `09a3af3`) is in the history and in
+`docs/superpowers/plans/`.
 
 ```
 .claude-plugin/plugin.json   Claude Code manifest — no `version`: Claude Code takes it from the commit
 .codex-plugin/plugin.json    Codex manifest — its own .mcp.codex.json and hooks/codex.json
-.mcp.json                    Claude Code server: ${CLAUDE_PLUGIN_ROOT}/bin/agent-irc, run by its shebang
-.mcp.codex.json              Codex server: python3 -c bootstrap that globs $CODEX_HOME/plugins/cache/*/agent-irc/*/bin/agent-irc
+.mcp.json                    Claude Code server: ${CLAUDE_PLUGIN_ROOT}/bin/agent-irc, no args
+.mcp.codex.json              Codex server: sh -c locator, newest $CODEX_HOME/plugins/cache/*/agent-irc/*/bootstrap/getty-bun.sh
 hooks/hooks.json             Claude Code hooks (loaded by convention, not named in the manifest)
 hooks/codex.json             Codex hooks: bare server name `irc`, one per-event field whitelist
                               (Codex rejects unknown ${…} placeholders), no SessionEnd
-bin/agent-irc                entry point
-agent_irc/text.py            string helpers            agent_irc/irc.py     connection thread
-agent_irc/config.py          settings, trust, merge    agent_irc/mcp.py     JSON-RPC loop
-agent_irc/usage.py           transcript readers        agent_irc/server.py  wiring
-agent_irc/events.py          event → lines             agent_irc/inbound.py inbox, allowlist
-tests/                       unittest; tests/fakeirc.py is the fake ircd
+bin/agent-irc                POSIX sh entry: finds the plugin root from its own path, execs the starter
+bin/agent-irc.exe            Windows: mcpoff, a server that does nothing (copy, see winlaunch/)
+bootstrap/getty-bun.sh .ps1  getty-bun starters, rendered; byte-equal to the getty-bun-install render
+dist/server.js               the bundle of src/server.ts, committed; what users run
+scripts/dist.sh              `bun run build` / `bun run check` (bundle, cmp with the committed one)
+package.json                 gettyBun.bunVersion 1.4.5, dev dependencies only; bunfig.toml: dev only
+src/text.ts                  string helpers            src/irc.ts           IRC connection
+src/config.ts                settings, trust, merge    src/mcp.ts           JSON-RPC loop
+src/usage.ts                 transcript readers        src/server.ts        wiring, queue, signals, main
+src/events.ts                event → lines             src/inbound.ts       inbox, allowlist
+src/py.ts                    the Python semantics the output depends on
+src/version.ts               VERSION (the release manager's)
+tests/*.test.ts              bun:test; tests/fakeirc.ts is the fake ircd,
+                              `bun tests/run_fakeirc.ts [port] [--tls] [--isupport TOKEN]…` the standalone one
 ```
 
 ## Rules
 
-- Python 3.9+, stdlib only. `tomllib` is imported inside a function with a
-  fallback parser for the one table we need. **The fallback has to grow with
-  every kind of value a config key can take.** It shipped understanding
-  strings and string arrays, so when `flood_burst`/`flood_interval`/`queue_limit`
-  arrived they were silently dropped on Python < 3.11 — a Codex user there ran
-  on the default bucket and queue cap no matter what the config said, and CI
-  caught it only because `test_full_level_sends_a_large_tool_input_whole` then
-  needs 20 minutes instead of a second. A development machine with only 3.11+
-  never takes that path, which is why
-  `tests/test_config_files.py::ReaderTests::test_toml_namespace_fallback`
-  forces it with `mock.patch.object(config, "_load_toml", return_value=None)`;
-  keep asserting the real keys there. The same thing happened again in 0.2.0,
-  one value type further along: `listen` is a **boolean**, which the fallback
-  also did not know, so inbound would have been dead on Python < 3.11 while
-  working everywhere else. Booleans are in now — the next new type will not
-  be, so check this list before adding a setting.
-- The TypeScript port (`src/`, branch `getty-bun`) has no TOML fallback:
-  `config.ts` reads `config.toml` with `Bun.TOML.parse`, which read every
-  value form above (strings, string arrays, integers, floats, booleans, the
-  quoted `[projects."…"]` table) in a probe on Bun 1.4.5 (2026-11-27). It is
-  not tomllib, though, and a differential run against the Python modules
-  found four disagreements: a leading byte order mark (tomllib refuses the
-  file, Bun skips it; `parseToml` now refuses it too), a trailing comma in an
-  inline table (Bun accepts, tomllib refuses), an integer beyond ±2^53 (Bun
-  refuses the whole file, trust markers included; tomllib reads it), and a
-  whole-valued float such as `flood_burst = 4.0` (Bun gives the number 4, so
-  the integer settings take it where Python ignores it). The last three are
-  open. `settings.json` has no such gap: `src/py.ts`'s `loads` keeps `4.0` a
-  float, as Python's `json` does. Where Python 3.9 and 3.11+ differ
-  (`fnmatch` ranges, `datetime.fromisoformat`, the TOML fallback), the port
-  follows 3.13.
-- `src/irc.ts` is `irc.py` without the thread: one async loop on Bun's event
-  loop, `read(timeout)` waking on socket data, a queued line or `beginClose`
-  instead of `select()`. Bytes, order and the greeting/drain/QUIT budgets are
+- Bun 1.4.5, pinned in `package.json` (`gettyBun.bunVersion`, and
+  `@types/bun` at the same version); no runtime dependencies. Users run the
+  committed `dist/server.js` and never `bun install` (the starter passes
+  `--no-install`). It is built with `bun build --target=bun`, whose `// @bun`
+  pragma makes Bun run it without transpiling, so nothing is written to the
+  user's transpiler cache. After any change under `src/`, `bun run build`;
+  `bun run check` rebuilds into a temp dir and `cmp`s, and both refuse any Bun
+  but the pinned one, because the bytes are only reproducible with it.
+  Comments do not survive bundling, so a comment-only change leaves
+  `dist/server.js` as it is.
+- `bootstrap/getty-bun.sh` and `bootstrap/getty-bun.ps1` are rendered, never
+  edited: they must stay byte-equal to the render in
+  `.claude/skills/getty-bun-install/bootstrap/` (skill `getty-bun-install`;
+  `cmp` both). Mode 100644 is right: they are always run as `sh <file>`.
+- TOML is read by `Bun.TOML.parse`, which replaced both of Python's readers,
+  `tomllib` and the one-table fallback below 3.11 that twice dropped a whole
+  value type silently (the tuning integers and floats in 0.1.x, the `listen`
+  boolean in 0.2.0). There is no fallback any more, but the lesson stands:
+  a setting with a new kind of value gets a test that reads it through the
+  real reader (`tests/config_files.test.ts`, `test_toml_namespace_fallback`
+  asserts every tuning key). Bun is not `tomllib`, though: it reads TOML 1.1,
+  so a whole class of files `tomllib` refused is accepted -- `\x` and `\e`
+  escapes, times without seconds (`10:30`), multi-line inline tables, a
+  trailing comma in an inline table (all checked on Bun 1.4.5, 2026-11-27,
+  the K4 review). It refuses an integer beyond ±2^53 (the whole file,
+  trust markers included; `tomllib` reads it), and gives a whole-valued float
+  such as `flood_burst = 4.0` as the number 4, so the integer settings take it
+  where Python ignored it. A leading byte order mark Bun would skip;
+  `parseToml` refuses it, as `tomllib` did. An invalid file is skipped whole.
+  `settings.json` has no such gap: `src/py.ts`'s `loads` keeps `4.0` a float,
+  as Python's `json` does. Where Python 3.9 and 3.11+ differed (`fnmatch`
+  ranges, `datetime.fromisoformat`), the port follows 3.13.
+- `src/irc.ts` is the Python `irc.py` without its thread: one async loop on
+  Bun's event loop, `read(timeout)` waking on socket data, a queued line or
+  `beginClose` instead of `select()`. Bytes, order and the greeting/drain/QUIT budgets are
   Python's; a differential run (2026-11-27, Bun 1.4.5, Python 3.13) put both
   clients against the same fake ircd, 22 scenarios x 3 seeds, and got
   identical lines in 64 of 66. The two that differ are LINELEN=140 with the
@@ -103,8 +119,8 @@ tests/                       unittest; tests/fakeirc.py is the fake ircd
   the fake's `stallAfterJoin`. The fake ircd is
   `tests/fakeirc.ts`, `bun tests/run_fakeirc.ts [port] [--tls] [--isupport
   TOKEN]…` the standalone one.
-- `src/mcp.ts` and `src/server.ts` are `mcp.py` and `server.py` on one
-  event loop; `dist/server.js` is the bundle the getty-bun starter runs as
+- `src/mcp.ts` and `src/server.ts` are the Python `mcp.py` and `server.py`
+  on one event loop; `dist/server.js` is the bundle the getty-bun starter runs as
   `run dist/server.js <claude-code|codex>`. The host word wins over
   `clientInfo`, which stays the fallback (no argument; an unknown one is
   logged). `onEvent` only queues and starts the drain a macrotask later, so
@@ -135,8 +151,8 @@ tests/                       unittest; tests/fakeirc.py is the fake ircd
   codes included.
 - The MCP loop is the only writer to stdout. Everything else logs to stderr.
 - `tools/call` must return immediately. Formatting, transcript reads and IRC
-  I/O happen on other threads. The Bun port has one thread, so there the
-  rule holds by giving way instead: the drain handles one event after
+  I/O happen after the answer. There is one thread, so the rule holds by
+  giving way: the drain handles one event after
   another, in arrival order, and before each `Session.handle` runs
   `Session.prepare`, which reads every transcript that event will read
   (the priming of a new or rolled-over session, `Stop`'s turn,
@@ -150,11 +166,17 @@ tests/                       unittest; tests/fakeirc.py is the fake ircd
   I/O as long. With it the same probe answers in 0.026 s at 5, 20 and 50 MB
   (Python: 0.000 s; Bun 1.4.5, 2026-11-27). `server.test.ts`, "a call
   arriving while a large transcript is primed is answered at once", holds
-  it under 100 ms on 50 MB. The model peek stays synchronous: it parses
-  256 KB at most.
+  it under 100 ms on 50 MB. What is left is synchronous: after `prepare()`,
+  `Session.handle` walks the parsed records in one go -- 85-97 ms for a 52 MB
+  transcript, about 1.7 ms/MB, the loop stalled up to ~120 ms in all (the K6
+  re-review, Bun 1.4.5, 2026-11-27) -- so a call that lands then waits that
+  long; at ~150 MB that is still a quarter second, far from the 5 s hook
+  timeout. The model peek stays synchronous too: it parses 256 KB at most.
 - Never block, deny or rewrite anything in a hook. The hook returns no
   decision on any event.
-- Tests: `python3 -m unittest discover tests`. No network beyond localhost.
+- The check: `bun run typecheck`, `bun test` (twice, for the timing tests),
+  `bun run check`, and the starters `cmp`ed against the render. No network
+  beyond localhost. CI is Ubuntu; macOS and Windows run in no CI.
 - Commits: summary imperative or `<component>: <what>`, no Conventional Commits type (`feat:`, `fix:` …), no `--signoff`.
 
 ## Two-harness traps
@@ -177,11 +199,11 @@ populate it. So on Claude Code the model can only come from the transcript —
 and a *fresh* session has no assistant record yet when the first
 `UserPromptSubmit` fires (measured on three real transcripts: the first record
 naming a model lands 6s later, with the first assistant message), which is why
-the `▶ session` line cannot name it. `Session._model_line` announces it as
+the `▶ session` line cannot name it. `Session.modelLine` announces it as
 `⇄ model …` on the first event where the transcript does name it, which in
 practice is the first `PreToolUse` — the assistant message carrying the tool
 call is written before the tool runs. That read goes through
-`_Tail.peek()`/`peek_model()`, which reads only the last 256 KB and leaves the
+`Tail.peek()`/`peekModel()`, which reads only the last 256 KB and leaves the
 offset alone: the turn totals are read exactly once, at `Stop`, and a peek that
 consumed records would silently zero them.
 
@@ -189,45 +211,46 @@ consumed records would silently zero them.
 `PRIVMSG #chan :text` as `:nick!user@host PRIVMSG #chan :text`, and it is
 *that* line the 512-byte RFC 1459 limit (or the server's advertised `LINELEN`)
 applies to. The sender therefore has to budget for a prefix it never writes.
-`IrcConnection.payload_limit()` does it exactly: `LINELEN` from `RPL_ISUPPORT`
+`IrcConnection.payloadLimit()` does it exactly: `LINELEN` from `RPL_ISUPPORT`
 (005) when advertised, else 512, minus the mask, minus `PRIVMSG <channel> :`,
 minus CRLF. The mask is not guessable — it is read off the `JOIN` the server
-echoes back with our own prefix (`_dispatch` picks up any prefix whose nick is
+echoes back with our own prefix (`dispatch()` picks up any prefix whose nick is
 ours) — so until it arrives a worst-case 76 bytes is assumed. This is also why
-`events.py` must not split by bytes: only the connection knows its server's
-limit, so the formatter emits *logical* lines of any length and `_pump()`
+`src/events.ts` must not split by bytes: only the connection knows its server's
+limit, so the formatter emits *logical* lines of any length and `pump()`
 splits each into as many `PRIVMSG`s as that connection needs, one flood-bucket
-token each, indent preserved on continuations. Two things follow: `_drain()`
-has to check `pending` as well as `queue`, and a line is never truncated —
-`cut_bytes` survives only as a last-resort guard in `_raw()` for the lines we
-build ourselves (a long `QUIT` summary). One timing trap follows from this:
-`LINELEN` arrives in the `005` burst *after* `001`, and a server sends the two
-as separate writes that can land in separate reads. A line already queued
-before registration would then be pumped the instant `001` sets `registered`,
-splitting it to the 512 fallback before `005` raised the limit — measured
-flaky 3/15 in the large-`Write` end-to-end test. So the first pump waits for
-`_greeting_settled()`: ISUPPORT in hand, or a `GREETING_GRACE` (0.5s) lapse for
-a server that sends none. Covered by
-`tests/test_irc_connection.py::test_early_line_waits_for_a_delayed_isupport_linelen`.
+token each, indent preserved on continuations. Two things follow: the
+connection's `drain()` has to check `pending` as well as `queue`, and a line is
+never truncated — `cutBytes` survives only as a last-resort guard in `raw()`
+for the lines we build ourselves (a long `QUIT` summary). One timing trap
+follows from this, and it has nothing to do with threads, so the port kept
+it: `LINELEN` arrives in the `005` burst *after* `001`, and a server sends the
+two as separate writes that can land in separate reads -- separate `data`
+events on a Bun socket just as separate `recv()`s in Python. A line already
+queued before registration would then be pumped the instant `001` sets
+`registered`, splitting it to the 512 fallback before `005` raised the limit —
+measured flaky 3/15 in the large-`Write` end-to-end test (Python). So the
+first pump waits for `greetingSettled()`: ISUPPORT in hand, or a
+`GREETING_GRACE` (0.5s) lapse for a server that sends none. Covered by
+`tests/irc_connection.test.ts`, `test_early_line_waits_for_a_delayed_isupport_linelen`.
 
 **`full` shortens nothing, which moves the real limit to the sender.**
 `SUMMARY_LIMIT`/`PROMPT_LIMIT` apply below `full` only: there a tool call is
 one line, so the whole input has to be folded into it and cut. At `full`
-`Session.summary_limit` is `None`, `_head()` keeps the value's *first* line
+`Session.summaryLimit` is `null`, `head()` keeps the value's *first* line
 whole (folding an 800-line file into the head would send it twice), and
-`render_input()` puts the entire `tool_input` underneath -- every field, every
-line, for every tool, not just the shell ones `_command_body()` used to
-handle. A body of a single line is dropped: the head line already is that
-line. What then decides whether those lines arrive is the connection, and its
-defaults are sized for a public server: `FloodBucket(burst=4, interval=2.0)`
-releases one line every two seconds and `QUEUE_LIMIT = 500` drops the oldest
-beyond that, so a 600-line `Write` loses the first 107 lines and needs 20
-minutes. Hence `flood_burst`, `flood_interval` and `queue_limit` (0 = never
-drop) in the config, merged by `merge_layers` and handed to the connection by
-`App._connect`. Remove `queue_limit = 0` from
-`tests/test_end_to_end.py::test_full_level_sends_a_large_tool_input_whole`
-and it fails with `… dropped 107 lines` -- that is the whole point of the
-test.
+`renderInput()` puts the entire `tool_input` underneath -- every field, every
+line, for every tool, not just the shell ones the Python `_command_body()`
+used to handle. A body of a single line is dropped: the head line already is
+that line. What then decides whether those lines arrive is the connection,
+and its defaults are sized for a public server: a `FloodBucket` of burst 4,
+interval 2.0 releases one line every two seconds and `QUEUE_LIMIT = 500`
+drops the oldest beyond that, so a 600-line `Write` loses the first 107 lines
+and needs 20 minutes. Hence `flood_burst`, `flood_interval` and `queue_limit`
+(0 = never drop) in the config, merged by `mergeLayers` and handed to the
+connection by `App.connect`. Remove `queue_limit = 0` from
+`tests/end_to_end.test.ts`, "full level sends a large tool input whole", and
+it fails with `… dropped 107 lines` -- that is the whole point of the test.
 
 **SessionStart fires before MCP servers are connected**, in both harnesses.
 The server announces the session itself on the first event that carries a
@@ -247,8 +270,6 @@ both markers are looked for under `CLAUDE_CONFIG_DIR` / `CODEX_HOME` first
 hooks are skipped silently. `codex exec` needs
 `--dangerously-bypass-hook-trust`.
 
-**`threading.Thread` owns `_handle`.** On Python 3.13 `Thread.__init__` sets an instance attribute `_handle`, which shadows any method of that name on a subclass; the connection thread's line handler is therefore called `_dispatch`. Do not name a `Thread` method `_handle`.
-
 **Claude Code auto-loads `hooks/hooks.json`; don't also declare it.** Declaring
 `"hooks": "./hooks/hooks.json"` in `.claude-plugin/plugin.json` points at the
 same file Claude Code loads automatically by convention. Claude Code then
@@ -265,7 +286,7 @@ SIGTERM) right after the last turn, then reconnects a fresh server process
 solely to call `SessionEnd`. A process whose first event is `SessionEnd` has
 no session to summarise — either it is that teardown reconnect, or a session
 that never received a prompt, and by design (spec §3) a session without a
-prompt never appears in IRC either way. `App._handle` recognizes a
+prompt never appears in IRC either way. `App.handle` recognizes a
 `SessionEnd` as literally the first event a fresh process sees and stays
 quiet instead of announcing anything.
 
@@ -276,8 +297,10 @@ directory: the channel showed `▶ session 47926732 …`, the turn, then
 `■ session ended (clear) · 41s · 1 turns · 0 tools`, then
 `▶ session 3cde7677 …` — with no JOIN between them, so it is one process and
 one IRC connection throughout. One `/clear` therefore exercises both paths in
-`App._handle`, in that order: the `SessionEnd` for the id it is running, then
+`App.handle`, in that order: the `SessionEnd` for the id it is running, then
 the rollover on a `UserPromptSubmit` carrying an id it has never seen.
+Not re-run on the Bun port; the oracle runs of the port (Rules, above) cover
+the rollover sequence against the fake ircd.
 
 **`Interrupt` is Codex's hook event, not Claude Code's.** `claude plugin
 validate` answers a shared hooks file that declares it with
@@ -303,14 +326,25 @@ connection fails cleanly and retries with backoff
 (`[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: self-signed
 certificate`), which is the behaviour to want; with `?insecure=1` it registers
 over TLSv1.3 (`TLS_AES_128_GCM_SHA256`), joins, delivers its line and quits.
+That was the Python server's `ssl`; the port's `node:tls` (`rejectUnauthorized`
+off only with `insecure=1`, SNI for host names only) is covered against the
+fake ircd's TLS mode with the self-signed pair in `tests/fixtures/`, not
+re-run against ergo.
 
 **Codex substitutes nothing in a plugin's `.mcp.json`.** `${CLAUDE_PLUGIN_ROOT}`
 and `${PLUGIN_ROOT}` arrive verbatim, the server starts in the session's cwd,
 and no environment variable names the install root. The only thing the plugin
-knows is its own name, so `.mcp.codex.json` runs an inline bootstrap that
-globs the newest `plugins/cache/*/agent-irc/*/bin/agent-irc` under
-`$CODEX_HOME` (default `~/.codex`). Verified live 2026-09-05 (Task 19): the
-bootstrap works, the server starts and real events reach IRC. Codex also
+knows is its own name, so `.mcp.codex.json` locates itself. Until 0.2.x that
+was a `python3 -c` bootstrap globbing `bin/agent-irc` (verified live
+2026-09-05, Task 19). Without Python it is `sh -c`: the newest (by mtime, `-nt`)
+of `$CODEX_HOME/plugins/cache/*/agent-irc/*/bootstrap/getty-bun.sh`,
+`$CODEX_HOME` defaulting to `~/.codex`, exec'd as `sh <starter> run
+dist/server.js codex`; none found, it says so on stderr and exits 1. The
+starter takes the plugin root from its own path, so the cwd does not matter.
+Live 2026-11-27 with `codex` 0.148.0 the locator found the copy, the server
+started and logged `initialized by codex` (see the Bun port table below).
+On Windows there is no `sh` to run it: Codex cannot start the server there
+(G4, not tried live). Covered by `tests/codex_bootstrap.test.ts`. Codex also
 refuses `mcp_tool` hooks on `SessionEnd`; `hooks/codex.json` leaves it out.
 
 **Codex's `mcp_tool` hook must address the server by its bare name, not the
@@ -337,7 +371,7 @@ subagent's own tool call, yet an `mcp_tool` hook using `"${agent_id}"` in
 turn's tool calls where `agent_id` is legitimately absent. `hooks/codex.json`
 therefore gives each event only the field names confirmed live (by dumping
 the real payload to a temporary `command` hook) to be safe for that event —
-see `tests/test_manifests.py`'s `test_codex_hooks_use_a_per_event_field_whitelist`
+see `tests/manifests.test.ts`, "codex hooks use a per event field whitelist",
 for the exact sets and how they were obtained. Interrupt, PermissionRequest
 and PostCompact couldn't be triggered from `codex exec` and conservatively
 get only the fields every other event was confirmed to share (`event`,
@@ -365,38 +399,46 @@ as, and count toward, the *main* turn instead of the subagent, because
 `agent_id` cannot be added to `PreToolUse`/`PostToolUse`'s field whitelist
 without Codex hard-failing the hook; and `PermissionRequest`/`PostCompact`
 carry only the base field set (no tool or trigger detail), since neither
-event could be triggered live to confirm a wider whitelist is safe.
+event could be triggered live to confirm a wider whitelist is safe. Older
+than all of that, `codex` 0.148.0 runs no `mcp_tool` hook at all: it skips
+each one at config load with `skipping MCP tool hook in …/hooks/codex.json:
+MCP invocation is not available yet` (8 per run, warm and cold; live
+2026-11-27), so nothing reaches IRC from it although the server starts. The
+Bun port has not been run under Codex ≥ 0.153 yet; the hook file is
+byte-identical to the one verified there.
 
 **Harnesses end the server by signal, not by EOF.** Task 19 assumed Codex's
-missing closing line meant it drops the pipe without the `for raw in stdin`
-loop ever observing an EOF; live re-verification (2026-09-05, Task 20) with
+missing closing line meant it drops the pipe without the stdin loop ever
+observing an EOF; live re-verification (2026-09-05, Task 20) with
 `RUST_LOG=debug` found the real mechanism instead: `MCP server stderr
 (python3): agent-irc: signal 15, shutting down` — Codex just sends the
 server a plain `SIGTERM` at session end, exactly like Claude Code. Neither
 harness closes stdin. Claude Code sends `SIGINT` and, roughly 100ms later if
-the process hasn't exited, escalates to `SIGTERM` (Task 18); that gap is
-tight enough that, once the first signal is caught and `shutdown()` is
-running, a second signal arriving mid-`join()` can unwind `shutdown()` via a
-fresh exception before the connection thread `begin_close()` only *asked* to
-send `QUIT` has actually written it — reproduced locally by sending SIGINT
-then SIGTERM 0.1s apart against a real subprocess (failed 3/3 runs). Fix,
-both live-verified 2026-09-05: `install_signal_handlers` in
-`agent_irc/server.py` turns `SIGTERM`/`SIGINT`/`SIGHUP` into a `SystemExit`
-raised in the main thread, so `mcp.serve`'s blocking stdin read unwinds
-through `App.run()`'s `finally` into `shutdown()` regardless of which signal
-arrived; and only the *first* signal raises — a later one just logs, so it
-can't cut a `shutdown()` already in progress short before the `QUIT` is
-written. `shutdown()` itself also gained an idempotency guard (`self.stopped`)
-for the case where it might otherwise run twice. Covered by
-`tests/test_end_to_end.py`'s `test_sigterm_sends_quit`, `test_sigint_sends_quit`
-and `test_sigint_then_sigterm_still_sends_quit`, and
-`tests/test_server.py::AppTests::test_shutdown_is_idempotent`.
+the process hasn't exited, escalates to `SIGTERM` (Task 18). In the Python
+server that second signal could unwind a `shutdown()` already in progress
+before the `QUIT` was written (reproduced 3/3), hence the rule that has
+carried over to the port: `installSignalHandlers` in `src/server.ts` stops
+on the *first* of `SIGTERM`/`SIGINT`/`SIGHUP` with exit code 128 + signum,
+and a later one is only logged (`signal N, already shutting down`), so it
+cannot cut the `QUIT` short; `shutdown()` is idempotent and hands every
+caller the same promise. Two things differ under Bun: the handlers run on
+the event loop, not by unwinding a blocked read, and a SIGINT/SIGTERM pair
+sent back to back reaches them in no fixed order, so the exit code of such
+a pair is 130 or 143 (Rules, above). The signals reach Bun directly because
+the starter `exec`s it: `bin/agent-irc` → `sh getty-bun.sh` → Bun is one PID
+(next trap). Live 2026-11-27 (`claude` 2.1.332): SIGINT then SIGTERM 0.1 s
+apart through `bin/agent-irc` → starter → Bun gave exactly one `QUIT`; under
+`codex` 0.148.0 the server logged `signal 15, shutting down` at session end.
+Covered by `tests/end_to_end.test.ts` ("sigterm sends quit", "sigint sends
+quit", "sighup sends quit", "sigint then sigterm still sends quit", "sigint
+and sigterm at once: …") and `tests/server.test.ts`, "shutdown is
+idempotent".
 
 **Inbound is a pull, and that is not a design preference.** Neither harness
 lets an MCP server wake a session that is idle at its prompt: there is no
 server→client notification either one turns into a turn, and a hook only fires
 when the session is already doing something. So `listen` collects into
-`agent_irc/inbound.Inbox` and the agent has to call `read_messages` to get
+the `Inbox` of `src/inbound.ts` and the agent has to call `read_messages` to get
 anything — which only a looping session does. Two consequences worth keeping
 in mind when touching this: the inbox has to be bounded (a session may never
 call, and a channel keeps talking — 200 messages, oldest dropped), and the
@@ -408,7 +450,7 @@ matches nothing; it takes `*!*@vhost.example`.
 **`tools/list` happens before any event, so the listen decision cannot wait
 for one.** The harness asks what tools the server has right after
 `initialize`, long before the first `UserPromptSubmit` names a session or a
-cwd. That is why `App.on_initialize` loads the config a second time, off the
+cwd. That is why `App.onInitialize` loads the config a second time, off the
 process's own cwd (`App.cwd`, injectable for tests), purely to decide whether
 `read_messages` is listed at all — quietly, since the session's own load does
 the logging with the cwd the harness reports. A session whose real cwd
@@ -422,7 +464,9 @@ home for everything of its own (auth, sessions, `models_cache.json`) and
 still started an `agent-irc` that reported version 0.1.0 — the copy in
 `~/.codex`, not the 0.1.1 installed in the isolated one. The same bootstrap
 line run by hand picks the right copy when the variable is in its
-environment, so the variable simply is not there for the child:
+environment, so the variable simply is not there for the child (that run
+used the Python bootstrap; the `sh -c` locator reads the same variable the
+same way):
 
     echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
       | CODEX_HOME=/tmp/x python3 -I -c "$(…the .mcp.codex.json bootstrap…)"
@@ -433,12 +477,16 @@ Consequences: under a custom `CODEX_HOME` the bootstrap either finds nothing
 (and the server exits saying so) or, worse, silently runs a *stale* copy from
 `~/.codex` — which then also reads `~/.codex/config.toml`, i.e. somebody
 else's channels. Nothing in the plugin can fix this from inside; the
-`CODEX_HOME` support in the bootstrap and in `config.config_home` stays for
+`CODEX_HOME` support in the locator and in `config.configHome` stays for
 the day Codex passes it. Claude Code has no such problem: the same test with
 `CLAUDE_CONFIG_DIR` (an isolated config dir, its own `settings.json`, its own
 `.claude.json`, the plugin installed into it) produced a session that read
 exactly that config and mirrored into the ircd it named — live 2026-09-08
-against `claude` 2.1.263.
+against `claude` 2.1.263. The same holds for the starter's own variables:
+`codex` 0.148.0 passes neither `GETTY_HOME` nor `GETTY_BUN_MIRROR` to the
+server (live 2026-11-27: one run fetched Bun from github.com because the
+mirror variable never arrived), so under Codex the slot is always
+`~/.getty/runtimes/bun` and the download always GitHub.
 
 **`SubagentStart`/`SubagentStop` are still not delivered in `codex`
 0.154.0-alpha.6.** Re-checked 2026-09-08 the way Task 19 did, with a real
@@ -451,13 +499,105 @@ alpha.
 **In `-p` (print) mode Claude Code refuses the `SessionEnd` mcp_tool hook
 outright**, with `SessionEnd hook [plugin:agent-irc:irc/event] failed:
 mcp_tool hooks are not available for the 'SessionEnd' hook event (no MCP
-client context)` on stderr (2.1.263, live 2026-09-08). Nothing is lost — the
+client context)` on stderr (2.1.263, live 2026-09-08); 2.1.332 words it
+`SessionEnd hook … failed: MCP server … is not connected` (live 2026-11-27,
+Bun port). Nothing is lost — the
 closing summary comes from the signal handler either way — and the entry has
 to stay, because in an *interactive* session `/clear` does deliver
 `SessionEnd` to the running process (see the rollover trap above). It is
 noise in headless runs only.
 
+## The starter and Bun
+
+**The starter `exec`s; it is not a parent.** `bin/agent-irc` (and the Codex
+locator) `exec sh bootstrap/getty-bun.sh run dist/server.js <host>`, and the
+starter ends in `exec "$slot/bin/bun" … "$root/dist/server.js" <host>`: the
+harness's child is Bun itself, same PID (part A probe 3.3b), so signals and
+stdin EOF reach the server with nothing in between. The starter's own `trap`s
+(clean up staging and `.installing`, print `getty-bun: stopped by a signal
+before Bun started`, exit 1) hold only until that `exec`, i.e. during an
+install. `bin/agent-irc` resolves its directory physically (`cd -P` before
+`..`), so a symlinked `bin/` or a symlink to the file still finds the real
+plugin root (`tests/entry.test.ts`).
+
+**stdout stays clean through an install.** The harness reads JSON-RPC from
+the first byte, so the starter writes nothing to stdout in `run` (only
+`status` prints there): its messages go to stderr, the fetcher's output into a
+variable. Part A probe 3.3a: a first start with install produced exactly the
+157-byte `initialize` answer on stdout. A failed install (mirror unreachable,
+checksum mismatch, unsupported target) exits 1 with stdout empty and one
+`getty-bun: …` line on stderr, which the harness logs as a server that did
+not start.
+
+**Bun runs isolated from the cwd and the environment.** The cwd is the
+harness's (the project the session is in), so the starter runs Bun with
+`--no-install --config=/dev/null --no-env-file` -- no auto-install, no
+`bunfig.toml` (preload, `[define]`) and no `.env*` of the user's project --
+and unsets `BUN_OPTIONS`, `BUN_INSPECT*`, `NODE_PATH` and the other variables
+that would inject code. This repository's `bunfig.toml` is development-only
+for the same reason: the shipped server never reads it.
+
+**The curl guard.** The download runs `curl -q -fsS -L --connect-timeout 30
+--speed-limit 1024 --speed-time 60` (`wget -T 60` without curl): a
+connection that cannot be made in 30 s, or that stays below 1 KB/s for 60 s,
+fails the install with the fetcher's exit code (28 for curl's stall). Under
+Claude Code that shows as a server exiting during `initialize`, which Claude
+Code restarts once (live 2026-11-27).
+
+**The first start installs, and both harnesses give it about 30 s.** The
+slot is per user and shared by every getty-bun plugin
+(`~/.getty/runtimes/bun/1.4.5/<target>/`, `GETTY_HOME` moves `~/.getty`;
+an install lock under `.locks/`, `GETTY_BUN_LOCK_WAIT` default 300 s), so
+only the very first getty-bun start on a machine downloads (~51 MB for
+linux-x64), and two concurrent cold starts share one download (live
+2026-11-27). Locally, from a file mirror, a first start takes ~1.7 s and a
+warm one ~57 ms to exit (part A, 3.3d). From GitHub it may not fit: a session
+whose server is not up in time is **not mirrored** (G3 (b); README, "The
+first start"). What the harnesses do then, live 2026-11-27 in a temp `HOME`
+with a throttling local mirror:
+
+- *Claude Code 2.1.332:* connect timeout 30000 ms by default (debug log),
+  `MCP_TIMEOUT` honoured (90000 let a 65 s install connect at 66.8 s). A 5 s
+  delay connected at 6.8 s, 15 s at 16.8 s; 35 s gave up at 30.03 s
+  (`CONNECT_TIMEOUT … timed out after 30000ms`; `claude mcp list` the same
+  after 30.95 s). The `mcp_tool` hook waits only 5 s for a connecting server
+  (`waiting up to 5000ms`, then `skipped — MCP server not connected`, status
+  1): in the 15 s run the first `UserPromptSubmit` and the event after it
+  were skipped, and since the IRC connection starts on the first event the
+  server sees, a session whose first prompt comes before the slot is ready
+  is not mirrored at all. On giving up Claude Code sends SIGINT, SIGTERM
+  ~0.1 s later and SIGKILL ~0.5 s later; the SIGKILL kills the starter's `sh`
+  before its trap runs, the orphaned curl finishes, and the 51 MB
+  `archive.zip` plus a stale `.installing` stay in `.staging/<id>/` -- no
+  later successful install sweeps them. There is no reconnect within the
+  session (the server installed by hand 20 s after the timeout: no reconnect
+  within 51 s). And after a timeout Claude Code writes
+  `mcp-needs-auth-cache.json` and does not start the server in new sessions
+  for about 15 minutes (skipped at 14 min, started at 16 min). A server that
+  exits during `initialize` is restarted once. Warm connect ~90 ms.
+- *Codex 0.148.0:* handshake timeout 29.999 s (`timed out handshaking with MCP
+  server after 29.999999777s`, logged only at session shutdown); a 15 s start
+  connected at 16.8 s. `startup_timeout_sec` works only on a user-level
+  `[mcp_servers.irc]` that repeats the plugin's command (`= 60` let a 45 s
+  install connect at 46.9 s); `-c mcp_servers.irc.startup_timeout_sec=60`
+  alone is rejected (no command). On giving up Codex kills starter and curl
+  together at +30 s, leaving an empty staging dir and a stale `.installing`.
+  No needs-auth cache: the next session starts and installs. Warm start ~40 ms.
+
+**macOS and Windows.** The starter in `bootstrap/` (getty-bun at
+`vars.bun_version = 1.4.5`) knows only `linux-x64`, `linux-x64-baseline` and
+`linux-aarch64` (glibc); on macOS or musl it exits 1 with `unsupported
+target`, so the plugin does not mirror there. macOS follows when getty-bun
+ships darwin targets (the merge of `getty-bun` waits for that, hub F5).
+Windows stays off (G4 (a)): under Claude Code `bin/agent-irc.exe` (mcpoff)
+starts instead of the script and answers the hooks quietly; under Codex the
+`sh -c` command has no `sh` to run in and the server does not start.
+
 ## Verified against real harnesses
+
+The first table is the Python server's. The hooks are byte-identical in the
+Bun port, so its hook-side rows still describe what the harness does; the
+server-side rows were re-checked for the port where the second table says so.
 
 Filled in by the live verification (plan Task 18), 2026-09-05, against
 `claude` 2.1.261 and `codex` 0.153.4, with the Claude Code column extended
@@ -488,6 +628,31 @@ never produced the evidence (noted why).
 | inbound `read_messages` | live 2026-09-08: `listen` + `listen_from` in an isolated config, seven DMs from the allowed mask returned in order, the disallowed sender's never; the call itself shows in the mirror as `⚙ read_messages` | not tested — same code path, nothing harness-specific beyond the tool listing |
 | install from the published catalog | live 2026-09-08 in an isolated `CLAUDE_CONFIG_DIR`: `plugin marketplace add Getty/marketplace` + `plugin install agent-irc@getty`, then a real session produced session line, prompt, turn summary and QUIT in the channel | `codex plugin add agent-irc@getty` verified live 2026-09-06 |
 
+### The Bun port (K9, 2026-11-27)
+
+`claude` 2.1.332 (newer than the rows above) and `codex` 0.148.0 (**older**
+than the 0.153/0.154 above). Method: a temp `HOME`, a scratch
+`CLAUDE_CONFIG_DIR` / `CODEX_HOME`, the plugin installed from a working-tree
+copy, the fake ircd (`bun tests/run_fakeirc.ts`) as the only IRC server, a
+local throttling mirror for the Bun download; no credentials (`claude -p`
+unauthenticated still runs the hooks; Codex against a local stub
+`/v1/responses` provider). Not run: an interactive `/mcp` reconnect, the idle
+notification, `/clear` on the Bun port, anything on macOS or Windows.
+
+| Item | Claude Code 2.1.332 | Codex 0.148.0 |
+|---|---|---|
+| server starts through the starter, `initialize` logged | `initialized by claude`; warm connect ~90 ms | `initialized by codex`; warm start ~40 ms |
+| MCP start timeout | 30000 ms; `MCP_TIMEOUT` honoured (90000: a 65 s install connected at 66.8 s) | 29.999 s handshake, logged only at session shutdown; `startup_timeout_sec` only via a user-level `[mcp_servers.irc]` with the command (60: a 45 s install connected at 46.9 s) |
+| slow first start | 5 s → connected at 6.8 s, 15 s → 16.8 s, 35 s → gave up at 30.03 s | 15 s → connected at 16.8 s |
+| hook while the server is still connecting | waits 5 s, then `skipped — MCP server not connected`; 15 s run: first `UserPromptSubmit` and the next event skipped, session not mirrored | not observable: every `mcp_tool` hook is skipped anyway (row below) |
+| after the timeout | SIGINT, SIGTERM +0.1 s, SIGKILL +0.5 s; orphaned curl, 51 MB `archive.zip` + stale `.installing` left in `.staging/<id>/`; no reconnect in the session; `mcp-needs-auth-cache.json`, no server start for ~15 min | starter and curl killed together at +30 s; empty staging dir + stale `.installing`; next session starts and installs |
+| server exits during `initialize` (curl guard, exit 28) | restarted once | not observed |
+| two concurrent cold starts | one download, shared | not tested |
+| hooks reach the server | yes: NICK/USER/JOIN, `▶ session`, `» hi`, `✖ turn failed` (no credential), one `QUIT` | **no**: `skipping MCP tool hook in …/hooks/codex.json: MCP invocation is not available yet`, 8 per run, warm and cold; re-check on ≥ 0.153 |
+| SIGINT then SIGTERM 0.1 s apart through `bin/agent-irc` → starter → Bun | exactly one `QUIT` | session end: `signal 15, shutting down` |
+| `-p` `SessionEnd` | `SessionEnd hook … failed: MCP server … is not connected` (2.1.263 said `mcp_tool hooks are not available …`) | n/a, no `SessionEnd` hook |
+| `GETTY_HOME` / `GETTY_BUN_MIRROR` reach the server | not separately recorded | **no**: one run fetched Bun from github.com because of it |
+
 ## The agent team
 
 Start Claude in this folder. The session you talk to hands the work to the right agent.
@@ -496,8 +661,8 @@ Start Claude in this folder. The session you talk to hands the work to the right
   and the README, `CLAUDE.md` or spec lines that record what it found.
 - `agent-irc-live-check`: live runs against real `claude`/`codex` and an ircd, in scratch
   config directories; reports what it saw, writes no repository file.
-- `agent-irc-reviewer`: checks a finished card independently and runs the tests on Python
-  3.13 and 3.9 itself; changes nothing.
+- `agent-irc-reviewer`: checks a finished card independently and runs the check (Rules)
+  itself; changes nothing.
 - `agent-irc-release-manager`: commits reviewed work, keeps `Changes`, stamps a version and
   checks a release on request.
 

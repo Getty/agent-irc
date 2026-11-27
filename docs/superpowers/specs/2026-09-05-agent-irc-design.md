@@ -1,11 +1,13 @@
 # agent-irc — design
 
-*Status: the design as built · written 2026-09-05, corrected 2026-09-08*
+*Status: the design as built · written 2026-09-05, corrected 2026-09-08,
+ported from Python to TypeScript on Bun 2026-11-27 (agent-developer k12)*
 
 This is the design record, not the manual: [README.md](../../../README.md)
 documents the plugin as it ships. Where a real harness disagreed with the
 design, the text is corrected inline below and marked
-**[corrected]**; every open question of §14 has since been answered live, and
+**[corrected]**; what the move from Python to TypeScript on Bun changed is
+marked **[changed 2026-11-27, Bun port, agent-developer k12]**; every open question of §14 has since been answered live, and
 the answers -- with the traps that came with them -- live in
 [CLAUDE.md](../../../CLAUDE.md).
 
@@ -15,7 +17,13 @@ things take, and what its subagents consumed. One IRC nick per session, lines
 in one or more channels, optionally the full prompt and answer texts.
 
 The plugin has no external dependencies: Python 3.9+ standard library only,
-same house style as `briefing`.
+same house style as `briefing`. **[changed 2026-11-27, Bun port, agent-developer k12]** The server is
+TypeScript, bundled into one committed file (`dist/server.js`) and run on Bun
+1.4.5, which the getty-bun starter (`bootstrap/getty-bun.sh`) installs into a
+per-user slot shared by getty-bun plugins on first use. Still no runtime
+dependency beyond Bun itself; nothing is installed from npm on a user's
+machine. The hooks did not change: the same `mcp_tool` hooks call the same
+`event` tool.
 
 ## 1. Goals
 
@@ -36,7 +44,7 @@ same house style as `briefing`.
   **[corrected in 0.2.0]** Still nothing is *sent* to IRC and nothing wakes a
   session, but an opt-in `listen` collects DMs and mentions for the agent to
   fetch with a `read_messages` tool. The mirror stays one-way; the inbox is a
-  pull. See README's "Listening back" and `agent_irc/inbound.py`.
+  pull. See README's "Listening back" and `src/inbound.ts`.
 - No cost in currency. Token counts only; pricing tables are not maintained.
 - No SASL or NickServ. The ircd `PASS` password is the only authentication.
 - No channel keys (`JOIN #chan key`).
@@ -104,6 +112,32 @@ agent_irc/usage.py             transcript readers for Claude and Codex
 agent_irc/text.py              truncation, splitting, path shortening
 tests/                         unittest, stdlib only
 README.md  CLAUDE.md  PRIVACY.md  CHANGELOG.md  LICENSE
+```
+
+**[changed 2026-11-27, Bun port, agent-developer k12]** The `agent_irc/` package and its tests are gone;
+the same modules are TypeScript now, and the server is started through the
+getty-bun starter:
+
+```
+bin/agent-irc                  POSIX sh entry for Claude Code: finds the plugin
+                               root from its own path, execs
+                               bootstrap/getty-bun.sh run dist/server.js claude-code
+.mcp.codex.json                Codex: an `sh -c` locator that finds the newest
+                               installed starter and execs it with
+                               run dist/server.js codex
+bootstrap/getty-bun.sh, .ps1   the getty-bun starters, rendered, never edited
+dist/server.js                 the bundle of src/server.ts, committed
+src/version.ts                 version
+src/mcp.ts                     stdio JSON-RPC loop, tool registration
+src/config.ts                  config discovery, merge, URL parsing, trust
+src/irc.ts                     IRC connection, registration, flood control
+src/events.ts                  event → lines, session/turn/subagent state
+src/usage.ts                   transcript readers for Claude and Codex
+src/text.ts                    truncation, splitting, path shortening
+src/inbound.ts                 inbox, allowlist
+src/server.ts                  wiring, event queue, signals
+src/py.ts                      the Python semantics the output depends on
+tests/*.test.ts                bun:test; tests/fakeirc.ts is the fake ircd
 ```
 
 The MCP server name is `irc`, the plugin name `agent-irc`, so Claude Code
@@ -248,6 +282,14 @@ values and string arrays (single or multi-line), until the next table header
 know is dropped silently there, and that happened twice (`CLAUDE.md`).
 Everything else in the file is skipped. Also used for the `[projects."…"]` trust lookup, which is one key.
 
+**[changed 2026-11-27, Bun port, agent-developer k12]** Both readers are replaced by `Bun.TOML.parse`, so there
+is no fallback parser any more. Bun reads TOML 1.1 and therefore accepts some
+files `tomllib` refused (`\x`/`\e` escapes, times without seconds,
+multi-line inline tables, a trailing comma in an inline table); it refuses an
+integer beyond 2^53 and gives a whole-valued float such as `4.0` as a number
+the integer settings accept. A leading byte order mark is refused explicitly,
+as `tomllib` did. An invalid file is still skipped whole (`CLAUDE.md`).
+
 ## 6. Transport
 
 ### 6.1 MCP server
@@ -273,6 +315,12 @@ direct use."* Its `inputSchema` is an object with `event` required and
 single dispatcher thread consumes the queue in order: formats lines, reads
 transcripts when needed, hands lines to the IRC connections. Event order is
 preserved and the stdio loop never blocks on IRC or disk.
+**[changed 2026-11-27, Bun port, agent-developer k12]** There are no threads: the stdio loop, the queue's
+drain and the IRC connections share Bun's event loop. The drain starts a
+macrotask after the call is answered and reads transcripts ahead in 512 KB
+chunks with a turn of the loop between them; the synchronous walk over the
+parsed records that follows costs about 1.7 ms per MB of transcript
+(`CLAUDE.md`, "Rules").
 
 The harness is detected from `clientInfo.name` in `initialize` and shown as
 `claude` or `codex` when the name contains one of those words; any other name
@@ -343,7 +391,8 @@ both lists. The hook returns no decision on any event; `Stop`,
 ## 7. IRC client
 
 - **One connection per server identity** (§5.4), one thread each, own send
-  queue. Connections are opened on the first event with a `session_id`.
+  queue. **[changed 2026-11-27, Bun port, agent-developer k12]** one connection object each, all on Bun's
+  event loop. Connections are opened on the first event with a `session_id`.
 - **Registration:** `PASS` if set, `NICK`, `USER <user> 0 * :<realname>`.
   Realname: `<harness> <session_id> <cwd>`. On `001` join every channel of
   that server. `PING` is answered. Registration timeout 30 s.
@@ -355,7 +404,9 @@ both lists. The hook returns no decision on any event; `Stop`,
   nick fits 30 characters; on `432` (erroneous nick) it retries at 9. After
   99 collisions the connection gives up with a log line.
 - **TLS:** `ssl.create_default_context()`; `insecure=1` disables verification
-  and hostname checking. SNI is sent.
+  and hostname checking. SNI is sent. **[changed 2026-11-27, Bun port, agent-developer k12]** `node:tls` with
+  the default CAs; `insecure=1` sets `rejectUnauthorized: false`; SNI is sent
+  for a host name, not for an IP address.
 - **Reconnect:** on any disconnect the thread retries with backoff 5, 10, 20,
   40, 60, 60… seconds until the session ends. The send queue keeps the last
   `queue_limit` lines (§5.2; default 500, `0` unlimited) across reconnects;
@@ -379,7 +430,7 @@ both lists. The hook returns no decision on any event; `Stop`,
   never cut. §8 says what gets shortened with `…` before it ever gets here.
 - **Inbound** **[0.2.0]**: with `listen` on, a `PRIVMSG` addressed to our
   nick, or to a channel with our nick in it as a whole word, goes to the inbox
-  (`agent_irc/inbound.py`) if the sender's `nick!user@host` matches
+  (`src/inbound.ts`) if the sender's `nick!user@host` matches
   `listen_from`; a CTCP `ACTION` arrives as `* …`, any other CTCP is dropped,
   and our own lines are never taken. The inbox holds 200 messages in memory,
   drops the oldest beyond that and says so on the next read. Nothing is
@@ -546,7 +597,8 @@ one debug log line. Never an error to the harness.
 - IRC errors, TLS errors, DNS failures: logged, retried per §7, never
   propagated to the harness.
 - Exceptions in the dispatcher thread are caught per event; the event is
-  dropped, the thread keeps running.
+  dropped, the thread keeps running. **[changed 2026-11-27, Bun port, agent-developer k12]** the drain on the
+  event loop does the same.
 - `tools/call` always returns success within milliseconds. The hook never
   blocks, denies or rewrites anything.
 
@@ -574,6 +626,10 @@ one debug log line. Never an error to the harness.
 ## 12. Testing
 
 `python3 -m unittest discover tests`, stdlib only.
+**[changed 2026-11-27, Bun port, agent-developer k12]** `bun test`, plus `bun run typecheck` and `bun run check`
+(the committed bundle equals a fresh build); the suite was ported test by
+test from the Python one and ran against it as an oracle until the Python
+code was removed. The TOML fallback test below has nothing left to force.
 
 - **config**: URL parsing incl. `#`, percent-encoding, `${VAR}`, `insecure`;
   the five merge scenarios of §5.3 in both file formats; trust with and
@@ -656,5 +712,8 @@ answer is the correction marked above -- neither harness delivers a usable
 - Channel is part of the server URL, so a project switching servers cannot
   inherit channels that do not exist there.
 - Python, one code base, standard library; not TypeScript plus Rust.
+  **[changed 2026-11-27, Bun port, agent-developer k12]** TypeScript on the shared getty-bun runtime, still one
+  code base and no runtime dependencies; the price is the first start, which
+  has to download Bun (README, "The first start").
 - The session process is the plugin's MCP server, owned by the harness;
   hooks deliver via `mcp_tool`. Socket transport is plan B only.
