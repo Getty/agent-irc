@@ -1,0 +1,29 @@
+---
+claimed_at: 2026-11-27T14:58:42Z
+claimed_by: agent-irc
+class: standard
+completed: 2026-11-27T14:58:42Z
+created: 2026-11-27T14:08:18Z
+id: 7
+priority: medium
+started: 2026-11-27T14:58:42Z
+status: done
+tags:
+- bun-port
+title: 'K4: Port the pure modules'
+updated: 2026-11-27T14:58:42Z
+---
+
+Hub card agent-developer k12, part B (brief ~/briefs/2026-11-27-agent-irc-getty-bun-umbau.md; plan: part A report §4). Branch getty-bun. Path A (G1): mcp_tool hooks stay byte-identical, only the MCP server moves to TypeScript under the getty-bun starter. text, config (TOML via Bun.TOML.parse, probing every form the Python fallback knows; trust readers), usage, events, inbound (fnmatch semantics) to src/*.ts; tests 1:1 to bun:test; Python suite stays as oracle (G6 a). Owner: worker. Depends K3.
+
+2026-11-27 14:24 Worker started: porting text, inbound, usage, config, events to src/*.ts with bun:test ports of the Python tests; Bun 1.4.5 in a temp env.
+
+2026-11-27 14:46 Ported text, inbound, usage, config, events to src/*.ts plus src/py.ts (Python builtin semantics: whitespace/splitlines, code-point lengths, round/%.1f half-even, str()/repr(), json.loads keeping key order and 1.0-vs-1, json.dumps, posixpath). Tests ported to tests/*.test.ts; bun test 233/0, typecheck and dist check green. Next: differential oracle against the Python modules.
+
+2026-11-27 14:53 Differential oracle (throwaway, /tmp/k7oracle, not committed): 56137 generated cases x 3 seeds through Python 3.13 and the TS modules (text 11 fns, inbound allowed/mentions/ctcp/is_channel/Inbox, config parse_url/redact/expand_env/merge_layers/load_config+trust, usage Claude+Codex readers incl. peek, events Session sequences). Found and fixed: TextDecoder dropped a leading BOM (text, config, usage); Bun.TOML accepted a BOM tomllib refuses. Left after fixes: only three Bun.TOML-vs-tomllib drifts (inline-table trailing comma accepted, int beyond 2^53 refuses the file, 4.0 read as int) and ints beyond 2^53 in settings.json rounded -- recorded in CLAUDE.md Rules. Also found: Python 3.9 itself differs from 3.13 (fnmatch [z-a], fromisoformat, TOML fallback); cut_bytes on a lone surrogate raises in Python, replaces in TS (irc side, K5).
+
+2026-11-27 14:53 Done: src/{py,text,inbound,usage,config,events}.ts port agent_irc/{text,inbound,usage,config,events}.py; tests/*.test.ts port all 200 Python tests of the 13 files (none skipped, 8 adapted) plus 31 Python-semantics tests. Checks: bun run typecheck 0, bun test 238/0, bun run check 0 (dist unchanged), python3 (3.13.5) and 3.9.25 unittest 299 OK. Oracle: 3x56137 cases, every remaining mismatch is one of the documented TOML/bigint drifts. CLAUDE.md Rules gained the Bun.TOML trap. Not committed.
+
+2026-11-27 14:58 Review (agent-irc-reviewer): READY. Checked git status/diff HEAD + new src/{py,text,inbound,usage,config,events}.ts, tests/*.test.ts (12 files), CLAUDE.md. Ran: Bun 1.4.5 harness (temp HOME) install --frozen-lockfile 0, typecheck 0, bun test 238/0, bun run check 0 (dist unchanged); python3 3.13.5 and 3.9.25 unittest 299 OK. Line-by-line read of all five modules vs Python; sampled test ports (config_files, usage, events_full) assert the same; own differential spot check (fnmatch 15 cases, parse_url incl. ircs+?insecure=1, IPv6, fullwidth port; Session at 3 levels incl. full-level render_input with floats/ordered keys) identical to Python 3.13. OWNERS: src/, tests/, CLAUDE.md all agent-irc-worker. No stdout writer in src/. Divergences judged non-blocking: (1) flood_burst/queue_limit = 4.0 in config.toml honoured where Python ignores it -- outside the spec's 'integer' contract, permissive direction; (2) int > 2^53 in Codex config.toml refuses the file -- no realistic Codex key; (3) inline-table trailing comma. Nit for the worker: Bun.TOML reads TOML 1.1 generally, not just the trailing comma -- also \x and \e escapes, a time without seconds, a multi-line inline table, all refused by tomllib (probed); CLAUDE.md Rules (lines 50-65) should name the class, not one instance.
+
+2026-11-27 14:58 Committed 3f2f939 on getty-bun, pushed to origin.
