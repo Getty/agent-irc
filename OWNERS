@@ -8,6 +8,7 @@ bin/agent-irc.exe	main
 hooks/	agent-irc-worker
 tests/	agent-irc-worker
 src/	agent-irc-worker
+src/version.ts	agent-irc-release-manager
 dist/	agent-irc-worker
 bootstrap/	agent-irc-worker
 scripts/	agent-irc-worker
