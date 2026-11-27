@@ -4,6 +4,7 @@ description: "agent-irc worker: implements, fixes and debugs the plugin (server 
 model: inherit
 skills:
   - agent-irc-core
+  - getty-bun-integration
   - superpowers:test-driven-development
   - superpowers:systematic-debugging
   - superpowers:verification-before-completion
