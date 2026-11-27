@@ -93,7 +93,8 @@ and IRC code are shared. This is not built unless needed.
 hooks/hooks.json               mcp_tool hooks for both harnesses (split into
                                hooks/claude.json + hooks/codex.json only if the
                                server reference must differ, see §14)
-bin/agent-irc                  entry point: python3, adds plugin root to sys.path
+bin/agent-irc                  entry point, run by its shebang (`#!/usr/bin/env python3`),
+                               adds plugin root to sys.path
 agent_irc/__init__.py          version
 agent_irc/mcp.py               stdio JSON-RPC loop, tool registration
 agent_irc/config.py            config discovery, merge, URL parsing, trust

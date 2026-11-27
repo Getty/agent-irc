@@ -16,7 +16,7 @@ and the agent calls that itself. Nothing else runs.
 ```
 .claude-plugin/plugin.json   Claude Code manifest — no `version`: Claude Code takes it from the commit
 .codex-plugin/plugin.json    Codex manifest — its own .mcp.codex.json and hooks/codex.json
-.mcp.json                    Claude Code server: python3 ${CLAUDE_PLUGIN_ROOT}/bin/agent-irc
+.mcp.json                    Claude Code server: ${CLAUDE_PLUGIN_ROOT}/bin/agent-irc, run by its shebang
 .mcp.codex.json              Codex server: python3 -c bootstrap that globs $CODEX_HOME/plugins/cache/*/agent-irc/*/bin/agent-irc
 hooks/hooks.json             Claude Code hooks (loaded by convention, not named in the manifest)
 hooks/codex.json             Codex hooks: bare server name `irc`, one per-event field whitelist

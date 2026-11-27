@@ -5,6 +5,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 from tests.fakeirc import FakeIrcServer
 
@@ -14,6 +15,32 @@ SID = "01a06850-1f0d-7970-a9c5-da84c99a6ef7"
 
 def rpc(id_, method, params):
     return json.dumps({"jsonrpc": "2.0", "id": id_, "method": method, "params": params}) + "\n"
+
+
+def server_env(home, **extra):
+    """The server's environment: ours, with `home` as HOME and no moved config dir.
+
+    `config.config_home` takes CLAUDE_CONFIG_DIR / CODEX_HOME over HOME, so
+    either one inherited from the session running the tests points the server
+    at a real config instead of the one written into `home`.
+    """
+    env = {k: v for k, v in os.environ.items() if k not in ("CLAUDE_CONFIG_DIR", "CODEX_HOME")}
+    env.update(extra, HOME=home)
+    return env
+
+
+class ServerEnvTests(unittest.TestCase):
+    def test_drops_the_running_sessions_config_dirs(self):
+        # Run from inside a Claude Code session, os.environ carries
+        # CLAUDE_CONFIG_DIR (and maybe CODEX_HOME); config.config_home prefers
+        # them over HOME, so the server would read the developer's real config
+        # instead of the test's fake home and never reach the fake ircd.
+        with mock.patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": "/real/claude", "CODEX_HOME": "/real/codex"}):
+            env = server_env("/tmp/fake-home", USER="getty")
+        # Compare names only: a failure must not print the environment.
+        self.assertEqual({"CLAUDE_CONFIG_DIR", "CODEX_HOME"} & set(env), set())
+        self.assertEqual(env["HOME"], "/tmp/fake-home")
+        self.assertEqual(env["USER"], "getty")
 
 
 class EndToEndTests(unittest.TestCase):
@@ -35,7 +62,7 @@ class EndToEndTests(unittest.TestCase):
             with open(os.path.join(home, ".codex", "config.toml"), "w") as f:
                 f.write('[agent-irc]\nchannels = ["irc://getty@127.0.0.1:%d/#agents"]\n'
                         'level = "full"\nflood_burst = 2000\nflood_interval = 0.0005\nqueue_limit = 0\n' % fake.port)
-            env = dict(os.environ, HOME=home, USER="getty")
+            env = server_env(home, USER="getty")
             proc = subprocess.Popen([sys.executable, os.path.join(ROOT, "bin", "agent-irc")], cwd=cwd, env=env,
                                     stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
             self.addCleanup(proc.kill)
@@ -72,7 +99,7 @@ class EndToEndTests(unittest.TestCase):
             os.makedirs(cwd)
             with open(os.path.join(home, ".codex", "config.toml"), "w") as f:
                 f.write('[agent-irc]\nchannels = ["irc://getty:${IRC_PW}@127.0.0.1:%d/#agents"]\n' % fake.port)
-            env = dict(os.environ, HOME=home, IRC_PW="pw", USER="getty")
+            env = server_env(home, IRC_PW="pw", USER="getty")
             proc = subprocess.Popen([sys.executable, os.path.join(ROOT, "bin", "agent-irc")], cwd=cwd, env=env,
                                     stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
             messages = [
@@ -118,7 +145,7 @@ class EndToEndTests(unittest.TestCase):
                 json.dump({"agent-irc": {"channels": ["irc://127.0.0.1:%d/#agents" % fake.port],
                                          "listen": True,
                                          "listen_from": ["getty!*@vhost.example"]}}, f)
-            env = dict(os.environ, HOME=home, USER="getty")
+            env = server_env(home, USER="getty")
             proc = subprocess.Popen([sys.executable, os.path.join(ROOT, "bin", "agent-irc")], cwd=cwd, env=env,
                                     stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
             self.addCleanup(proc.kill)
@@ -169,7 +196,7 @@ class EndToEndTests(unittest.TestCase):
         os.makedirs(cwd)
         with open(os.path.join(home, ".claude", "settings.json"), "w") as f:
             json.dump({"agent-irc": {"channels": ["irc://127.0.0.1:%d/#sig" % fake.port]}}, f)
-        env = dict(os.environ, HOME=home, USER="getty")
+        env = server_env(home, USER="getty")
         proc = subprocess.Popen([sys.executable, os.path.join(ROOT, "bin", "agent-irc")], cwd=cwd, env=env,
                                 stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         proc.stdin.write(rpc(1, "initialize", {"protocolVersion": "2025-06-18", "clientInfo": {"name": "claude-code"}}))
