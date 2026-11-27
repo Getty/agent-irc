@@ -1,0 +1,23 @@
+---
+claimed_at: 2026-11-27T14:16:29Z
+claimed_by: agent-irc-worker
+class: standard
+completed: 2026-11-27T14:16:29Z
+created: 2026-11-27T14:07:49Z
+id: 3
+priority: medium
+started: 2026-11-27T14:16:29Z
+status: done
+tags:
+- bun-port
+title: 'K0: Keep the end-to-end tests off the session''s config dir'
+updated: 2026-11-27T14:16:35Z
+---
+
+Hub card agent-developer k12, part B (brief ~/briefs/2026-11-27-agent-irc-getty-bun-umbau.md; plan: part A report §4). Branch getty-bun. test_end_to_end.py drops CLAUDE_CONFIG_DIR/CODEX_HOME from the server's env (6 fail, 60 s when set); CLAUDE.md:19 and spec :96 name the real start command (not python3 …, since edf1aa5). Owner: worker -> reviewer -> release-manager.
+
+2026-11-27 14:12 worker: tests/test_end_to_end.py builds the server env via server_env(), which drops CLAUDE_CONFIG_DIR/CODEX_HOME; ServerEnvTests is the regression (seen red with the filter removed). Repro before the fix: 6 FAIL in 50 s with both set. CLAUDE.md:19 and spec :96 now name the shebang start. 299 tests OK on 3.13.5 and 3.9.25, each with and without both vars set. Ready for agent-irc-reviewer.
+
+2026-11-27 14:15 reviewer: READY. Files: tests/test_end_to_end.py, CLAUDE.md:19, docs/superpowers/specs/2026-09-05-agent-irc-design.md:96 (all worker's per OWNERS). Check: 299 tests OK on 3.13.5 and 3.9, each with CLAUDE_CONFIG_DIR/CODEX_HOME unset and set to a scratch dir; HEAD's test_end_to_end with both set: 6 FAIL (red), tree: green. .mcp.json/bin shebang match the new doc lines.
+
+Committed as 955fcd6 on getty-bun.
