@@ -1,0 +1,31 @@
+---
+claimed_at: 2026-11-27T17:31:44Z
+claimed_by: agent-irc
+class: standard
+completed: 2026-11-27T17:31:44Z
+created: 2026-11-27T14:08:30Z
+id: 11
+priority: medium
+started: 2026-11-27T17:31:44Z
+status: done
+tags:
+- bun-port
+title: 'K8: CI on Bun with dist and starter checks'
+updated: 2026-11-27T17:31:44Z
+---
+
+Hub card agent-developer k12, part B (brief ~/briefs/2026-11-27-agent-irc-getty-bun-umbau.md; plan: part A report §4). Branch getty-bun. Path A (G1): mcp_tool hooks stay byte-identical, only the MCP server moves to TypeScript under the getty-bun starter. .github/workflows/test.yml on setup-bun 1.4.5: bun install --frozen-lockfile, typecheck, bun test, rebuild+cmp, starter render+cmp; macOS leg comes with F5; ci.yml and .cicd mcpoff check stay. .github/ commits go last and stay local, the hub pushes them. Owner: worker. Depends K7.
+
+2026-11-27 17:16 Worker started: .github/workflows/test.yml to Bun (setup-bun 1.4.5, typecheck, test, dist check, starter render+cmp, real-download starter e2e); looking at the K6 latency-test margin.
+
+2026-11-27 17:24 Latency test (tests/server.test.ts 'answered at once'): measured 12-18 ms here, 36-280 ms pinned to one shared core; on one core it also failed on messages[0] because priming (5-30 s) outlasts DRAIN_BUDGET 2 s and shutdown cuts the drain. Fix (test only): bound relative = ping latency < 1/4 of the priming time (measured to the turn line), DRAIN_BUDGET 120 s in that test, timeout 60 s. Red without read-ahead (READ_AHEAD 512 MB): 1690 ms vs bound 443 -> fails. Workflow: render step moved before bun test so build.test.ts's 3 render-dependent tests run in CI (402 pass/5 skip instead of 399/8).
+
+2026-11-27 17:25 Done: .github/workflows/test.yml is one Bun job (checkout@v6, pin read from package.json -> setup-bun@v2 -> asserted equal, install --frozen-lockfile, typecheck, bun run check, skilletor clone@3641b4b + install.sh --no-plugin, trust/sync/cmp/cmp/grep, bun test, starter e2e with AGENT_IRC_BUN_MIRROR=https://github.com/oven-sh/bun/releases/download); macOS as a comment (F5); ci.yml and .cicd unchanged. tests/server.test.ts: CI-safe relative latency bound (separate commit). Verified: YAML parsed with Bun.YAML; every run: step replayed in a fresh clone, temp HOME/XDG/BUN_INSTALL_CACHE_DIR/GETTY_HOME, harness Bun 1.4.5 (also linked as node), real skilletor install step at the pinned commit, real GitHub download in the e2e: all exit 0 (402 pass/5 skip; e2e 3 pass, first start 4.0 s). Repo: typecheck 0, bun test 402/5/0 twice, bun run check 0.
+
+2026-11-27 17:29 Review (agent-irc-reviewer): READY for commit, with one doc follow-up for the worker. Checked .github/workflows/test.yml and tests/server.test.ts on Bun 1.4.5 (harness), temp HOME/XDG_CACHE_HOME/BUN_INSTALL_CACHE_DIR/GETTY_HOME: install --frozen-lockfile 0, typecheck 0, bun test 402 pass/5 skip/0 fail twice, bun run check 0, starters cmp+version grep ok, starter e2e with AGENT_IRC_BUN_MIRROR=GitHub 3 pass (first start 3.6 s). YAML parses; pin flows via step output into with:/env: only (no run: interpolation); permissions contents:read, persist-credentials false; render before bun test so build.test.ts's skipIf tests run; mirror URL matches getty-bun.sh default_mirror + /bun-v<ver>/<archive>. Supply chain: skilletor at full SHA, install.sh --no-plugin uses its own clone (dist/ present at 3641b4b), its starter downloads only checksum-pinned binaries; sync pulls getty/karr skill sources unpinned but nothing from them runs. Mutation READ_AHEAD=512 MB in a scratch copy: red 3/3 (1560-1688 ms vs bound 428-447), red on one core (3418 vs 889); real tree green 3/3 on one core. Finding: CLAUDE.md:168-169 still says the test holds it 'under 100 ms on 50 MB' -- now a quarter of the priming time; worker should update it with the tests/ commit. Nits: actions pinned by tag not SHA (house style, as ci.yml); job renamed test->bun, check branch-protection required checks.
+
+2026-11-27 17:30 Doc fix per review: CLAUDE.md Rules, the read-ahead paragraph no longer says the test 'holds it under 100 ms on 50 MB'; it now describes the relative bound (ping within a quarter of the time to the ✔ turn line), DRAIN_BUDGET 120 s, 60 s timeout, and the reviewer's no-read-ahead numbers (1560-1688 vs 428-447 ms; one core 3418 vs 889 ms). Docs only, no test run.
+
+2026-11-27 17:31 Re-review (agent-irc-reviewer) of the CLAUDE.md doc fix (git diff HEAD -- CLAUDE.md, lines 167-175): OK. Relative bound (ping within a quarter of the time to the turn line), DRAIN_BUDGET 120 s, 60 s timeout and the no-read-ahead numbers match tests/server.test.ts:539,580,587 and my K8 measurements; no 'under 100 ms' left. Nit: CLAUDE.md:175 is 96 cols, the paragraph was not reflowed. Card stays READY for commit.
+
+2026-11-27 17:31 Committed: tests part 8fb40b2 (pushed), workflow part e578bb3 (local, pushed by the hub)
