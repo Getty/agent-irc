@@ -103,9 +103,55 @@ tests/                       unittest; tests/fakeirc.py is the fake ircd
   the fake's `stallAfterJoin`. The fake ircd is
   `tests/fakeirc.ts`, `bun tests/run_fakeirc.ts [port] [--tls] [--isupport
   TOKEN]…` the standalone one.
+- `src/mcp.ts` and `src/server.ts` are `mcp.py` and `server.py` on one
+  event loop; `dist/server.js` is the bundle the getty-bun starter runs as
+  `run dist/server.js <claude-code|codex>`. The host word wins over
+  `clientInfo`, which stays the fallback (no argument; an unknown one is
+  logged). `onEvent` only queues and starts the drain a macrotask later, so
+  a `tools/call` is answered before its event is formatted; `shutdown()`
+  waits for what is still queued first, as Python's worker does before its
+  `None`, but at most `DRAIN_BUDGET` (2s, `worker.join(2.0)`), and hands
+  every caller the same promise. Requests are read with
+  `py.loads` (key order, `4.0`) and answered with `py.dumps(…, {ensureAscii:
+  true})`, Python's `json.dumps` bytes; stdout is written with
+  `fs.writeSync(1)`, diagnostics with `writeSync(2)`. Exit codes are
+  Python's: 0 on EOF or a gone stdout, 128 + the first signal (130, 143,
+  129). Two Bun behaviours this relies on, measured on Bun 1.4.5,
+  2026-11-27: Bun ignores `SIGPIPE`, so a reader that went away shows as
+  `EPIPE` from `writeSync` and the loop stops with 0
+  (`tests/end_to_end.test.ts`, "stdout gone"); and a SIGINT and SIGTERM
+  sent back to back reach the listeners in no fixed order -- 7 of 10
+  SIGTERM first, whichever was sent first (part A saw 3 of 3) -- where
+  Python always runs SIGINT's handler first, by signal number. Only the
+  first signal counts either way (20 of 20: one QUIT, the second logged),
+  so the exit code of such a pair is 130 or 143. The same probe sent to the
+  Python server hung 1 run in 10: neither handler ran and the process went
+  on reading stdin until a third signal. An oracle (same JSON-RPC and hook
+  sequences, same fake ircd, six scenarios: full level with every Claude
+  event, Codex with a password and SIGTERM, listen + `read_messages`,
+  `/clear` rollover with late events and SIGINT-then-SIGTERM, `SessionEnd`
+  first, no config) found stdout byte-identical (`read_messages`' clock
+  aside) and the ircd's lines identical once durations are masked, exit
+  codes included.
 - The MCP loop is the only writer to stdout. Everything else logs to stderr.
 - `tools/call` must return immediately. Formatting, transcript reads and IRC
-  I/O happen on other threads.
+  I/O happen on other threads. The Bun port has one thread, so there the
+  rule holds by giving way instead: the drain handles one event after
+  another, in arrival order, and before each `Session.handle` runs
+  `Session.prepare`, which reads every transcript that event will read
+  (the priming of a new or rolled-over session, `Stop`'s turn,
+  `SubagentStop`'s subagent) ahead with `Tail.readAhead` -- 512 KB
+  (`READ_AHEAD`) parsed at a time, a `setImmediate` turn between chunks,
+  chunks cut at line ends so `records()` returns exactly what one read
+  would. Without it the priming parsed a whole resumed transcript in one go
+  (about 34 ms/MB): a `ping` sent right after the first `UserPromptSubmit`
+  waited 0.23 s at 5 MB, 0.71 s at 20 MB, 1.72 s at 50 MB, so a ~150 MB one
+  would push the next hook past its 5 s timeout and hold signals and IRC
+  I/O as long. With it the same probe answers in 0.026 s at 5, 20 and 50 MB
+  (Python: 0.000 s; Bun 1.4.5, 2026-11-27). `server.test.ts`, "a call
+  arriving while a large transcript is primed is answered at once", holds
+  it under 100 ms on 50 MB. The model peek stays synchronous: it parses
+  256 KB at most.
 - Never block, deny or rewrite anything in a hook. The hook returns no
   decision on any event.
 - Tests: `python3 -m unittest discover tests`. No network beyond localhost.

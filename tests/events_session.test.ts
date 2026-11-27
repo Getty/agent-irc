@@ -1,6 +1,6 @@
 // Port of tests/test_events_session.py: describe = the Python TestCase, test = its method.
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { appendFileSync, mkdtempSync, rmSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Session } from "../src/events.js";
@@ -268,5 +268,78 @@ describe("SessionCoreTests", () => {
     const sub = new Session("claude", "subactivity", CWD, HOME, { clock: clock.now });
     expect(sub.handle(base({ event: "UserPromptSubmit", prompt: "a\nb" })).length).toBe(2);
     expect(sub.handle(base({ event: "Stop", last_assistant_message: "x" })).length).toBe(1);
+  });
+});
+
+// -- what the port adds: prepare() reads ahead what handle() will read ---------------
+
+describe("SessionPrepareTests", () => {
+  let tmp = "";
+  beforeEach(() => {
+    tmp = mkdtempSync(join(tmpdir(), "airk9-prepare-"));
+  });
+  afterEach(() => rmSync(tmp, { recursive: true, force: true }));
+
+  const SID = "e873ddde-2247-4f84-9e15-527db0caf191";
+
+  /** The same events through prepare()+handle() and through handle() alone; pauses per event. */
+  async function both(harness: string, events: (Rec | (() => void))[]): Promise<number[]> {
+    const plainClock = new Clock();
+    const readClock = new Clock();
+    const plain = new Session(harness, "activity", CWD, HOME, { clock: plainClock.now });
+    const ahead = new Session(harness, "activity", CWD, HOME, { clock: readClock.now });
+    const pauses: number[] = [];
+    for (const ev of events) {
+      if (typeof ev === "function") {
+        ev(); // something the harness writes between two events
+        continue;
+      }
+      let n = 0;
+      await ahead.prepare(ev, async () => void (n += 1));
+      pauses.push(n);
+      expect(ahead.handle(ev)).toEqual(plain.handle(ev));
+      plainClock.tick(1);
+      readClock.tick(1);
+    }
+    expect(ahead.summary()).toBe(plain.summary());
+    return pauses;
+  }
+
+  test("claude: the priming, the turn and a subagent are read ahead, nothing else", async () => {
+    const transcript = join(tmp, "sess.jsonl");
+    const usage = { input_tokens: 10, output_tokens: 20 };
+    appendFileSync(transcript, JSON.stringify(assistant("r0", usage)) + "\n");
+    // the subagent's transcript hangs off the main transcript's directory
+    const sub = join(tmp, SID, "subagents");
+    mkdirSync(sub, { recursive: true });
+    writeFileSync(join(sub, "agent-a1.jsonl"), JSON.stringify(assistant("s1", usage, "claude-sub", 2)) + "\n");
+    const base = { session_id: SID, cwd: CWD, transcript_path: transcript };
+    const pauses = await both("claude", [
+      { ...base, event: "UserPromptSubmit", prompt: "hi" },
+      { ...base, event: "PreToolUse", tool_name: "Bash", tool_input: { command: "ls" }, tool_use_id: "t1" },
+      { ...base, event: "SubagentStart", agent_id: "a1", agent_type: "Explore" },
+      { ...base, event: "SubagentStop", agent_id: "a1", agent_type: "Explore" },
+      // the turn's own record arrives before Stop
+      () => appendFileSync(transcript, JSON.stringify(assistant("r1", usage)) + "\n"),
+      { ...base, event: "Stop" },
+    ]);
+    expect(pauses).toEqual([1, 0, 0, 1, 1]);
+  });
+
+  test("codex: the priming, the turn and a subagent are read ahead", async () => {
+    const transcript = join(tmp, "rollout.jsonl");
+    const sub = join(tmp, "sub.jsonl");
+    const record = (key: string) =>
+      JSON.stringify({ type: "token_usage_record", payload: { turn_id: "t", [key]: { input_tokens: 5000, output_tokens: 400 } } }) + "\n";
+    writeFileSync(transcript, record("turn_token_usage"));
+    writeFileSync(sub, record("thread_token_usage"));
+    const base = { session_id: SID, cwd: CWD, transcript_path: transcript, turn_id: "t" };
+    const pauses = await both("codex", [
+      { ...base, event: "UserPromptSubmit", prompt: "hi" },
+      { ...base, event: "SubagentStop", agent_id: "c1", agent_type: "worker", agent_transcript_path: sub },
+      () => appendFileSync(transcript, record("turn_token_usage")),
+      { ...base, event: "Stop" },
+    ]);
+    expect(pauses).toEqual([1, 1, 1]);
   });
 });

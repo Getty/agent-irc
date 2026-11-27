@@ -8,6 +8,8 @@ import {
   ClaudeTranscript,
   CodexTranscript,
   PEEK,
+  READ_AHEAD,
+  Tail,
   Usage,
   claudeSubagentPath,
 } from "../src/usage.js";
@@ -37,6 +39,7 @@ beforeEach(() => {
 afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
   PEEK.bytes = 256 * 1024;
+  READ_AHEAD.bytes = 512 * 1024;
 });
 
 function appendTo(path: string, ...records: Rec[]): void {
@@ -250,5 +253,74 @@ describe("RecordSemantics", () => {
     writeFileSync(path, '{"type": "assistant", "requestId": "r", "message": {"usage": {"output_tokens": 5, "input_tokens": NaN}}}\n');
     const u = new ClaudeTranscript(path).readNew();
     expect([u.input, u.output]).toEqual([0, 5]);
+  });
+});
+
+// -- what the port adds: the read-ahead ------------------------------------------------
+
+describe("ReadAheadTests", () => {
+  const path = () => join(dir, "t.jsonl");
+  // lines of differing lengths, a blank one, a broken one and one far longer than a chunk
+  const body = [
+    JSON.stringify({ n: 1 }),
+    "",
+    JSON.stringify({ n: 2, pad: "y".repeat(50) }),
+    "{broken",
+    JSON.stringify({ n: 3, pad: "z".repeat(300) }),
+    JSON.stringify({ n: 4 }),
+  ].join("\n") + "\n" + JSON.stringify({ n: 5 }); // the last record is still being written
+
+  test("records after a read-ahead are the records of a plain read, whatever the chunk", async () => {
+    writeFileSync(path(), body);
+    const plain = new Tail(path());
+    const expected = plain.records();
+    for (const bytes of [1, 7, 40, 64, 1000, 1 << 20]) {
+      READ_AHEAD.bytes = bytes;
+      const t = new Tail(path());
+      let turns = 0;
+      await t.readAhead(async () => void (turns += 1));
+      expect(t.offset).toBe(0); // nothing consumed yet
+      expect(t.records()).toEqual(expected);
+      expect(t.offset).toBe(plain.offset);
+      expect(turns).toBeGreaterThan(0);
+    }
+  });
+
+  test("lines appended after the read-ahead come with it, in order", async () => {
+    writeFileSync(path(), body);
+    const t = new Tail(path());
+    await t.readAhead();
+    appendFileSync(path(), "\n" + JSON.stringify({ n: 6 }) + "\n");
+    expect(t.records()).toEqual([{ n: 1 }, { n: 2, pad: "y".repeat(50) }, { n: 3, pad: "z".repeat(300) }, { n: 4 }, { n: 5 }, { n: 6 }]);
+    expect(t.records()).toEqual([]);
+  });
+
+  test("a file rewritten shorter after the read-ahead is read from the start", async () => {
+    writeFileSync(path(), body);
+    const t = new Tail(path());
+    t.records();
+    appendFileSync(path(), "\n" + JSON.stringify({ n: 6, pad: "q".repeat(400) }) + "\n");
+    await t.readAhead();
+    writeFileSync(path(), JSON.stringify({ n: 7 }) + "\n");
+    expect(t.records()).toEqual([{ n: 7 }]);
+  });
+
+  test("a read-ahead continues from the offset and a missing file reads nothing", async () => {
+    writeFileSync(path(), body);
+    const t = new Tail(path());
+    t.records();
+    appendFileSync(path(), "\n");
+    await t.readAhead();
+    expect(t.records()).toEqual([{ n: 5 }]);
+    const gone = new Tail(join(dir, "missing.jsonl"));
+    await gone.readAhead();
+    expect(gone.records()).toEqual([]);
+  });
+
+  test("whole-file reads take a read-ahead tail", async () => {
+    appendFileSync(path(), JSON.stringify(assistant("r1", USAGE_A)) + "\n");
+    const t = new ClaudeTranscript(path());
+    await t.readAhead();
+    expect(ClaudeTranscript.readWhole(path(), t).output).toBe(198);
   });
 });

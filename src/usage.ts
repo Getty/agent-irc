@@ -356,11 +356,11 @@ function parseLines(data: Uint8Array): unknown[] {
   return out;
 }
 
-function readFrom(path: string, position: number): Uint8Array {
+function readFrom(path: string, position: number, limit = Infinity): Uint8Array {
   const fd = openSync(path, "r");
   try {
     const size = fstatSync(fd).size;
-    const length = Math.max(size - position, 0);
+    const length = Math.min(Math.max(size - position, 0), limit);
     const buffer = new Uint8Array(length);
     let got = 0;
     while (got < length) {
@@ -374,23 +374,93 @@ function readFrom(path: string, position: number): Uint8Array {
   }
 }
 
+/**
+ * How much transcript readAhead() parses before it lets the event loop run.
+ * An object so a test can shrink it, as with PEEK.
+ */
+export const READ_AHEAD = { bytes: 512 * 1024 };
+
+/** A macrotask turn: what is waiting on the loop (stdin, a signal, a socket) runs first. */
+const nextTask = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
+
 /** Yields the complete JSON lines appended to a file since the previous call. */
 export class Tail {
   offset = 0;
+  /** Records parsed ahead from `start` (the offset then) to `end`, not yet handed out. */
+  private ahead: { start: number; end: number; records: unknown[] } | null = null;
   constructor(readonly path: string) {}
 
   records(): unknown[] {
+    const ahead = this.ahead;
+    this.ahead = null;
     let data: Uint8Array;
+    let before: unknown[] = [];
     try {
-      if (statSync(this.path).size < this.offset) this.offset = 0;
-      data = readFrom(this.path, this.offset);
+      const size = statSync(this.path).size;
+      if (size < this.offset) this.offset = 0;
+      // Appended to since the read-ahead is fine; rewritten shorter is not,
+      // and then the plain read below sees what a read without it would.
+      if (ahead !== null && ahead.start === this.offset && size >= ahead.end) {
+        before = ahead.records;
+        data = readFrom(this.path, ahead.end);
+        this.offset = ahead.end;
+      } else {
+        data = readFrom(this.path, this.offset);
+      }
     } catch {
       return []; // OSError
     }
     const end = data.lastIndexOf(0x0a);
-    if (end < 0) return [];
+    if (end < 0) return before;
     this.offset += end + 1;
-    return parseLines(data.subarray(0, end));
+    const after = parseLines(data.subarray(0, end));
+    return before.length === 0 ? after : before.concat(after);
+  }
+
+  /**
+   * Parse what records() would return now, READ_AHEAD.bytes at a time,
+   * waiting a macrotask turn between chunks; records() hands it out later.
+   *
+   * Python reads a transcript on its dispatcher thread. Here the read shares
+   * the loop that answers JSON-RPC, and a resumed session's whole transcript
+   * (tens of MB) parsed in one go kept every tools/call waiting for seconds.
+   * A chunk ends at a line end, so the lines are exactly records()'s; a
+   * single line longer than a chunk is parsed whole.
+   */
+  async readAhead(pause: () => Promise<void> = nextTask): Promise<void> {
+    let ahead = this.ahead !== null && this.ahead.start === this.offset ? this.ahead : null;
+    if (ahead === null) ahead = { start: this.offset, end: this.offset, records: [] };
+    this.ahead = ahead;
+    for (;;) {
+      let size: number;
+      try {
+        size = statSync(this.path).size;
+      } catch {
+        return; // records() meets the same OSError
+      }
+      if (size < ahead.end) {
+        this.ahead = null; // rewritten shorter: records() starts over
+        return;
+      }
+      let data: Uint8Array;
+      let end = -1;
+      let want = READ_AHEAD.bytes;
+      try {
+        for (;;) {
+          data = readFrom(this.path, ahead.end, want);
+          end = data.lastIndexOf(0x0a);
+          if (end >= 0 || data.length < want) break;
+          want *= 2; // no line end yet: one line longer than a chunk
+        }
+      } catch {
+        return;
+      }
+      if (end < 0) return;
+      for (const record of parseLines(data.subarray(0, end))) ahead.records.push(record);
+      ahead.end += end + 1;
+      await pause();
+      if (this.ahead !== ahead) return; // records() took it meanwhile
+    }
   }
 
   /**
@@ -477,8 +547,9 @@ export class ClaudeTranscript extends Tail {
     return claudeUsage(this.peek()).model;
   }
 
-  static readWhole(path: string): Usage {
-    const records = new ClaudeTranscript(path).records();
+  /** `tail`: a ClaudeTranscript of `path` that already read ahead, at offset 0. */
+  static readWhole(path: string, tail: Tail = new ClaudeTranscript(path)): Usage {
+    const records = tail.records();
     const usage = claudeUsage(records);
     usage.duration = span(records);
     return usage;
@@ -536,8 +607,8 @@ export class CodexTranscript extends Tail {
   }
 
   /** Whole-file totals (thread_token_usage) and duration, for a subagent transcript. */
-  static readWhole(path: string): Usage {
-    const records = new CodexTranscript(path).records();
+  static readWhole(path: string, tail: Tail = new CodexTranscript(path)): Usage {
+    const records = tail.records();
     const usage = codexScan(records, null, "thread_token_usage");
     usage.duration = span(records);
     return usage;

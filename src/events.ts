@@ -1,7 +1,7 @@
 // Turn hook events into IRC lines (spec §8; port of agent_irc/events.py).
 import * as py from "./py.js";
 import { firstLine, fmtDuration, lineCount, shortPath, splitBlock, truncate } from "./text.js";
-import { ClaudeTranscript, CodexTranscript, Usage, claudeSubagentPath } from "./usage.js";
+import { ClaudeTranscript, CodexTranscript, Usage, claudeSubagentPath, type Tail } from "./usage.js";
 
 export const G = {
   start: "▶",
@@ -273,6 +273,8 @@ export class Session {
   agentDescriptions: [unknown, string][] = [];
   subagents = new Map<string, Subagent>();
   transcript: Transcript | null = null;
+  /** The subagent transcript prepare() read ahead for the SubagentStop that follows. */
+  private aheadSubagent: Transcript | null = null;
   ended = false;
 
   private readonly handlers: Record<string, (ev: Event) => string[]> = {
@@ -306,6 +308,39 @@ export class Session {
   }
 
   // -- dispatch -----------------------------------------------------------
+
+  /**
+   * Read ahead every transcript handle(raw) is about to read, a chunk at a
+   * time with a macrotask turn in between (Tail.readAhead), so the read that
+   * handle() then does synchronously finds the backlog already parsed.
+   *
+   * Python does these reads on its dispatcher thread; the port does them on
+   * the loop that answers JSON-RPC, and a resumed session's priming read of
+   * a whole transcript must not hold the next tools/call up. handle() alone
+   * gives the same lines: prepare() changes when the bytes are parsed, never
+   * which ones.
+   */
+  async prepare(raw: unknown, pause?: () => Promise<void>): Promise<void> {
+    const ev = clean(raw);
+    const path = get(ev, "transcript_path");
+    const name = snake(get(ev, "event"));
+    const reads: Tail[] = [];
+    if (this.sessionId === null && py.truthy(get(ev, "session_id")) && py.truthy(path)) {
+      // start() primes a new transcript of this path
+      this.transcript = this.newTranscript(path);
+      reads.push(this.transcript);
+    } else if (name === "stop" && (this.transcript !== null || py.truthy(path))) {
+      if (this.transcript === null) this.transcript = this.newTranscript(path);
+      reads.push(this.transcript);
+    } else if (name === "subagent_stop") {
+      const sub = this.subagentTranscript(ev);
+      if (sub !== null) {
+        this.aheadSubagent = sub;
+        reads.push(sub);
+      }
+    }
+    for (const tail of reads) await tail.readAhead(pause);
+  }
 
   handle(raw: unknown): string[] {
     const ev = clean(raw);
@@ -354,7 +389,11 @@ export class Session {
     this.started = this.clock();
     if (py.truthy(get(ev, "cwd"))) this.cwd = get(ev, "cwd");
     if (py.truthy(get(ev, "transcript_path"))) {
-      this.transcript = this.newTranscript(get(ev, "transcript_path"));
+      // prepare() may have made it already, read ahead and still at offset 0
+      const path = py.str(get(ev, "transcript_path"));
+      if (this.transcript === null || this.transcript.path !== path || this.transcript.offset !== 0) {
+        this.transcript = this.newTranscript(get(ev, "transcript_path"));
+      }
       try {
         const primed =
           this.transcript instanceof CodexTranscript ? this.transcript.readTurn(null) : this.transcript.readNew();
@@ -518,18 +557,29 @@ export class Session {
     return [line];
   }
 
+  /** The subagent's own transcript, read whole at SubagentStop; null when there is none to read. */
+  private subagentTranscript(ev: Event): Transcript | null {
+    if (this.harness === "codex") {
+      const path = get(ev, "agent_transcript_path");
+      return py.truthy(path) ? new CodexTranscript(py.str(path)) : null;
+    }
+    const main = this.transcript !== null ? this.transcript.path : get(ev, "transcript_path");
+    if (py.truthy(main) && py.truthy(this.sessionId) && py.truthy(get(ev, "agent_id"))) {
+      return new ClaudeTranscript(claudeSubagentPath(py.str(main), this.sessionId!, py.str(get(ev, "agent_id"))));
+    }
+    return null;
+  }
+
   private subagentUsage(ev: Event): Usage {
+    const ahead = this.aheadSubagent;
+    this.aheadSubagent = null;
     try {
-      if (this.harness === "codex") {
-        const path = get(ev, "agent_transcript_path");
-        return py.truthy(path) ? CodexTranscript.readWhole(py.str(path)) : new Usage();
-      }
-      const main = this.transcript !== null ? this.transcript.path : get(ev, "transcript_path");
-      if (py.truthy(main) && py.truthy(this.sessionId) && py.truthy(get(ev, "agent_id"))) {
-        return ClaudeTranscript.readWhole(
-          claudeSubagentPath(py.str(main), this.sessionId!, py.str(get(ev, "agent_id"))),
-        );
-      }
+      let sub = this.subagentTranscript(ev);
+      if (sub === null) return new Usage();
+      if (ahead !== null && ahead.path === sub.path && ahead.constructor === sub.constructor) sub = ahead;
+      return sub instanceof CodexTranscript
+        ? CodexTranscript.readWhole(sub.path, sub)
+        : ClaudeTranscript.readWhole(sub.path, sub);
     } catch (e) {
       if (this.debug) this.debug(`agent-irc: transcript read failed: ${errorRepr(e)}`);
     }

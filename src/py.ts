@@ -511,7 +511,7 @@ class JsonParser {
   }
 }
 
-function jsonString(s: string): string {
+function jsonString(s: string, ensureAscii = false): string {
   let out = '"';
   for (let i = 0; i < s.length; i++) {
     const c = s[i]!;
@@ -524,6 +524,9 @@ function jsonString(s: string): string {
     else if (c === "\b") out += "\\b";
     else if (c === "\f") out += "\\f";
     else if (code < 0x20) out += "\\u" + hex(code, 4);
+    // ensure_ascii=True: anything past "~" as \uXXXX, one per UTF-16 unit --
+    // which is how Python writes a character beyond U+FFFF, as its surrogate pair.
+    else if (ensureAscii && code > 0x7e) out += "\\u" + hex(code, 4);
     else out += c; // ensure_ascii=False: everything else as it is, lone surrogates too
   }
   return out + '"';
@@ -536,17 +539,39 @@ function jsonFloat(x: number): string {
   return floatRepr(x);
 }
 
-/** json.dumps(x, ensure_ascii=False). */
-export function dumps(x: unknown): string {
+export interface DumpsOptions {
+  /** json.dumps' default: every character past "~" escaped. Off: ensure_ascii=False. */
+  ensureAscii?: boolean;
+  /** sort_keys=True: by code point, as Python compares str. */
+  sortKeys?: boolean;
+}
+
+function byCodePoint(a: string, b: string): number {
+  const x = [...a];
+  const y = [...b];
+  for (let i = 0; i < Math.min(x.length, y.length); i++) {
+    const d = x[i]!.codePointAt(0)! - y[i]!.codePointAt(0)!;
+    if (d !== 0) return d;
+  }
+  return x.length - y.length;
+}
+
+/** json.dumps(x, ensure_ascii=False), or with `options` the other forms. */
+export function dumps(x: unknown, options: DumpsOptions = {}): string {
+  const ascii = options.ensureAscii === true;
   if (x === null || x === undefined) return "null";
   if (x === true) return "true";
   if (x === false) return "false";
-  if (typeof x === "string") return jsonString(x);
+  if (typeof x === "string") return jsonString(x, ascii);
   if (typeof x === "bigint") return x.toString();
   if (x instanceof PyFloat) return jsonFloat(x.value);
   if (typeof x === "number") return Number.isInteger(x) ? intRepr(x) : jsonFloat(x);
-  if (Array.isArray(x)) return "[" + x.map(dumps).join(", ") + "]";
-  if (isDict(x)) return "{" + dictEntries(x).map(([k, v]) => `${jsonString(k)}: ${dumps(v)}`).join(", ") + "}";
+  if (Array.isArray(x)) return "[" + x.map((v) => dumps(v, options)).join(", ") + "]";
+  if (isDict(x)) {
+    const entries = dictEntries(x);
+    if (options.sortKeys) entries.sort(([a], [b]) => byCodePoint(a, b));
+    return "{" + entries.map(([k, v]) => `${jsonString(k, ascii)}: ${dumps(v, options)}`).join(", ") + "}";
+  }
   throw new PyTypeError(`Object of type ${typeName(x)} is not JSON serializable`);
 }
 
