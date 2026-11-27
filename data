@@ -1,0 +1,19 @@
+---
+class: standard
+completed: 2026-11-27T14:16:25Z
+created: 2026-11-27T14:08:11Z
+id: 5
+priority: medium
+started: 2026-11-27T14:16:25Z
+status: done
+tags:
+- bun-port
+title: 'K2: Install the getty-bun consumer skills'
+updated: 2026-11-27T14:16:41Z
+---
+
+Hub card agent-developer k12, part B (brief ~/briefs/2026-11-27-agent-irc-getty-bun-umbau.md; plan: part A report §4). Branch getty-bun. Path A (G1): mcp_tool hooks stay byte-identical, only the MCP server moves to TypeScript under the getty-bun starter. .claude/skilletor.json: source agent-bun-runtime@v0.1.0 (path skills), vars.bun_version 1.4.5, skills getty-bun, getty-bun-install, getty-bun-integration; getty-bun-integration into the worker's skills. Main session (.claude/ is main's). Depends K1.
+
+2026-11-27 14:15 reviewer: READY. Files: .claude/skilletor.json, .claude/agents/agent-irc-worker.md (main's). Matches getty-bun-install SKILL.md section 1 (source, ref v0.1.0, path skills, vars.bun_version 1.4.5). Lock: git:b808c29 = v0.1.0. Rendered bootstrap/getty-bun.sh and .ps1 cmp-identical to agent-bun-runtime bootstrap/, both '# version 1.4.5'; rendered skills and lock gitignored. Check: 299 tests OK on 3.13.5 and 3.9, vars unset and set.
+
+Committed as 63b92ec on getty-bun.
