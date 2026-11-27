@@ -1,0 +1,19 @@
+{
+  "name": "agent-irc",
+  "private": true,
+  "type": "module",
+  "gettyBun": {
+    "contractVersion": 1,
+    "bunVersion": "1.4.5"
+  },
+  "scripts": {
+    "build": "sh scripts/dist.sh build",
+    "check": "sh scripts/dist.sh check",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.5",
+    "typescript": "7.0.2"
+  }
+}

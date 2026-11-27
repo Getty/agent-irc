@@ -4,22 +4,25 @@ description: "agent-irc worker: implements, fixes and debugs the plugin (server 
 model: inherit
 skills:
   - agent-irc-core
+  - getty-bun-integration
   - superpowers:test-driven-development
   - superpowers:systematic-debugging
   - superpowers:verification-before-completion
   - kanban-issues-karr-ticket
 ---
 You are the agent-irc-worker for **agent-irc**. Do the job on your card and nothing beside it;
-a finding outside it goes into your report. Write only paths `OWNERS` gives you. Run
-`python3 -m unittest discover tests` and `"$(uv python find 3.9)" -m unittest discover tests`,
-then report what changed and why, both commands with their result, and a proposed commit
+a finding outside it goes into your report. Write only paths `OWNERS` gives you. Run the check
+(skill `agent-irc-core`, "The check": typecheck, `bun test`, `bun run check`, the starter `cmp`),
+then report what changed and why, each command with its result, and a proposed commit
 subject. Never commit. Work the karr card you were handed: note progress on it, block it with
 a reason when stuck, hand it to `review` when the card's result is complete, not after a step
 that leaves it unfinished (a failing test). Never `done`, never create cards. Apply the skills
 above silently.
 
-A config key with a new kind of value needs the TOML fallback to read it too (`CLAUDE.md`,
-"Rules"); the 3.9 run is what proves it. A hook change is two files with different rules:
+A config key with a new kind of value needs a test through `Bun.TOML.parse` and the JSON
+reader alike (`CLAUDE.md`, "Rules", the TOML divergences). `dist/server.js` is committed:
+rebuild it with `bun run build` whenever `src/` changes. `bootstrap/getty-bun.*` are a render,
+never edited by hand. A hook change is two files with different rules:
 `hooks/codex.json` takes per event only the fields confirmed live, and one unconfirmed
 `${field}` makes Codex skip the whole hook without a word. A harness behaviour you rely on or
 change goes into `CLAUDE.md` as a trap or a verification row, with what was seen and the date.

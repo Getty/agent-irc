@@ -1,14 +1,68 @@
 name: test
 on: [push, pull_request]
+
+permissions:
+  contents: read
+
 jobs:
-  test:
+  bun:
+    # The server runs on the Bun the getty-bun starter installs, the version in
+    # package.json gettyBun.bunVersion; CI tests, builds and renders with
+    # exactly that one. macOS: a second leg on macos-latest once getty-bun
+    # ships darwin targets (F5); getty-bun.sh refuses darwin until then.
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
         with:
-          python-version: ${{ matrix.python }}
-      - run: python3 -m unittest discover tests -v
+          persist-credentials: false
+      - name: Bun version from package.json
+        id: pin
+        run: |
+          bun=$(jq -r .gettyBun.bunVersion package.json)
+          echo "gettyBun.bunVersion: $bun"
+          echo "bun=$bun" >> "$GITHUB_OUTPUT"
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ steps.pin.outputs.bun }}
+      - name: setup-bun installed the pinned Bun
+        env:
+          PIN: ${{ steps.pin.outputs.bun }}
+        run: |
+          have=$(bun --version)
+          echo "bun $have, package.json pins $PIN"
+          test "$have" = "$PIN"
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - name: dist/server.js equals a fresh build
+        run: bun run check
+      - name: skilletor (pinned clone, its install.sh)
+        env:
+          SKILLETOR_COMMIT: 3641b4b12c7bfff2ecce537eee6dc06d06ae0680
+        run: |
+          git clone --quiet https://github.com/Getty/skilletor.git "$RUNNER_TEMP/skilletor"
+          git -C "$RUNNER_TEMP/skilletor" checkout --quiet "$SKILLETOR_COMMIT"
+          sh "$RUNNER_TEMP/skilletor/install.sh" --no-plugin --bin-dir "$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - name: The starters equal a fresh render of the pin
+        # skill getty-bun-install, section 4. A fresh runner has no ~/.claude,
+        # and skilletor without a detected harness stops; the targets line is
+        # for this job only.
+        run: |
+          mkdir -p ~/.claude && { [ -e ~/.claude/skilletor.json ] || echo '{"targets":["claude"]}' > ~/.claude/skilletor.json; }
+          skilletor trust agent-bun-runtime
+          skilletor sync --scope project
+          cmp bootstrap/getty-bun.sh  .claude/skills/getty-bun-install/bootstrap/getty-bun.sh
+          cmp bootstrap/getty-bun.ps1 .claude/skills/getty-bun-install/bootstrap/getty-bun.ps1
+          grep -qx "# version $(jq -r .gettyBun.bunVersion package.json)" bootstrap/getty-bun.sh
+      - name: bun test
+        # after the render: tests/build.test.ts compares the starters and the
+        # schema with the rendered skills, and skips that in a bare checkout
+        run: bun test
+      - name: The starter end to end, with a real Bun download
+        # tests/starter.test.ts: bin/agent-irc and the .mcp.codex.json locator
+        # through the starter, which downloads the pinned, checksum-verified
+        # archive from its own default mirror into a temp GETTY_HOME.
+        env:
+          AGENT_IRC_BUN_MIRROR: https://github.com/oven-sh/bun/releases/download
+        run: bun test tests/starter.test.ts

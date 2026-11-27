@@ -1,0 +1,6 @@
+# Package scripts run tsc through a `#!/usr/bin/env node` shebang. This makes
+# `node` resolve to Bun itself, also where a Node is installed, so typecheck,
+# build and check need only the pinned Bun. Development only: the getty-bun
+# starter runs the bundle with --config=/dev/null, so this file never reaches it.
+[run]
+bun = true

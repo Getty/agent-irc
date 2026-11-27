@@ -17,8 +17,8 @@ and answer texts.
 <agent-irc-1> ✔ turn · 3m12s · 24 tools · 210k in (190k cached) / 6k out · claude-fable-5-1
 ```
 
-No dependencies: Python 3.9+ standard library. Works in Claude Code and Codex
-from the same code.
+Works in Claude Code and Codex from the same code. Runs on Linux; see
+[Requirements](#requirements) for macOS and Windows.
 
 ## Install
 
@@ -34,6 +34,9 @@ codex plugin marketplace add Getty/marketplace
 codex plugin add agent-irc@getty
 ```
 
+**The first session after installing does not mirror**, unless Bun 1.4.5 is
+already on the machine -- see [The first start](#the-first-start).
+
 Codex asks once to trust the plugin's hooks. Until you do, nothing happens.
 Codex does not deliver `SessionEnd` to MCP tool hooks, but the server still
 ends the session with the same closing `QUIT` summary line as Claude Code:
@@ -41,10 +44,93 @@ both harnesses end the server process with a signal rather than a
 `SessionEnd` event, and the server catches that signal to send it. See
 `CLAUDE.md` for details.
 
-**Windows** is not supported: there the plugin installs and stays off, quietly.
-Claude Code starts `bin/agent-irc.exe` in place of the server, which connects
-and does nothing, so the hooks report no missing server and nothing reaches
-IRC (see `winlaunch/README.md`).
+### Requirements
+
+The server is TypeScript and runs on [Bun](https://bun.sh) 1.4.5, which you do
+not install yourself: the plugin starts through the getty-bun starter
+(`bootstrap/getty-bun.sh`), and on first use that starter downloads Bun 1.4.5
+from Bun's GitHub releases, checks it against the SHA-256 pinned in the
+starter, and puts it in a per-user slot that every getty-bun plugin shares:
+`~/.getty/runtimes/bun/1.4.5/<target>/` (`GETTY_HOME` moves `~/.getty`). If
+another getty-bun plugin already put 1.4.5 there, nothing is downloaded. No
+Python, no Node, no `npm install`; the download needs `curl` or `wget`, plus
+`unzip`, `flock`, `mktemp` and `sha256sum` or `shasum`, all of them standard
+on a Linux desktop.
+
+| platform | state |
+|---|---|
+| Linux, x64 (with or without AVX2) and aarch64, glibc | supported |
+| Linux with musl libc (Alpine) | not supported: the starter refuses, the server does not start |
+| macOS | **not yet**: the starter in this version has no macOS targets and refuses to start, so nothing reaches IRC. It follows once getty-bun ships them. |
+| Windows | off, see below |
+
+**Windows** is not supported: there the plugin installs and stays off. Under
+Claude Code it stays off quietly: Claude Code starts `bin/agent-irc.exe` in
+place of the server, which connects and does nothing, so the hooks report no
+missing server and nothing reaches IRC (see `winlaunch/README.md`). Under
+Codex the server is started as `sh -c …`, which a Windows machine without a
+POSIX `sh` cannot run: the server does not start, and nothing reaches IRC
+either. Neither has been tried on a real Windows machine
+with this version.
+
+### The first start
+
+Both harnesses give an MCP server about 30 seconds to start. On the very first
+start, the server's own start includes downloading and checking Bun (about
+50 MB). That start fits into the 30 s on a fast line (from a local mirror it
+took about 1.7 s) and may not on a slow one, but even when it fits, **the first
+session is not guaranteed to mirror**: it mirrors only if the server is up
+before the session's first prompt. On a slow line it most likely is not; on a
+fast one it may be:
+
+- **Claude Code** waits 30 s for the server (measured with 2.1.332), and a
+  hook waits only 5 s for a server that is still starting before it skips its
+  event. The server opens its IRC connection with the session's first
+  delivered event, so a session whose first prompt comes before the server is
+  up was not mirrored at all in the measurement -- even where the install
+  itself took only 15 s. If the start takes longer than 30 s, Claude Code gives
+  up for this session (it does not retry), and for about the next 15 minutes
+  new sessions do not even try to start the server. Giving up does not stop
+  the download: Claude Code kills the starter before it can clean up, the
+  download carries on by itself and finishes, and the whole archive (about
+  51 MB, `archive.zip`) stays behind with a stale `.installing` marker in
+  `~/.getty/runtimes/bun/.staging/<id>/`. A later successful install does not
+  remove it; that directory is safe to delete.
+- **Codex** waits 30 s for the handshake (measured with 0.148.0); the next
+  session simply tries again.
+
+Once Bun is in the slot, the server starts in about a tenth of a second and
+every session after that mirrors normally. To get past the first start
+without losing a session, any one of these works:
+
+- install Bun ahead of time with the starter itself, then start the harness:
+
+  ```
+  for f in ~/.claude/plugins/cache/*/agent-irc/*/bootstrap/getty-bun.sh \
+           ~/.codex/plugins/cache/*/agent-irc/*/bootstrap/getty-bun.sh; do
+      [ -f "$f" ] && sh "$f" ensure
+  done
+  ```
+
+- Claude Code: give the first session a longer start, in milliseconds:
+  `MCP_TIMEOUT=120000 claude`.
+- Codex: `startup_timeout_sec` can only be set on a user-level server entry,
+  not on a plugin's server, and the entry needs the command as well
+  (`-c mcp_servers.irc.startup_timeout_sec=…` alone is rejected). Copy
+  `command` and `args` from the plugin's `.mcp.codex.json` into
+  `~/.codex/config.toml`:
+
+  ```toml
+  [mcp_servers.irc]
+  command = "sh"
+  args = ["-c", "…the string from .mcp.codex.json…"]
+  startup_timeout_sec = 120
+  ```
+
+The download comes from `https://github.com/oven-sh/bun/releases`.
+`GETTY_BUN_MIRROR` points the starter at a mirror of the same layout instead,
+but only where the harness passes it on: Codex passes neither it nor
+`GETTY_HOME` to the server it starts (measured with 0.148.0).
 
 ## Configure
 
@@ -138,10 +224,10 @@ that line keeps its first line whole and the input follows underneath, field
 by field:
 
 ```
-<agent-irc-1> ⚙ Write 0.3s: agent_irc/events.py [+812 lines]
-<agent-irc-1>   file_path: /home/getty/dev/agent-irc/agent_irc/events.py
+<agent-irc-1> ⚙ Write 0.3s: src/events.ts [+812 lines]
+<agent-irc-1>   file_path: /home/getty/dev/agent-irc/src/events.ts
 <agent-irc-1>   content:
-<agent-irc-1>     """Turn hook events into IRC lines (spec §8)."""
+<agent-irc-1>     // Turn hook events into IRC lines (spec §8).
 <agent-irc-1>     …
 ```
 
@@ -273,25 +359,38 @@ main turn instead of the subagent; `PermissionRequest`/`PostCompact` carry
 less detail than on Claude Code; and a custom `CODEX_HOME` does not work,
 because Codex does not pass that variable to the MCP server it starts, so the
 plugin looks for itself -- and for your settings -- in `~/.codex` regardless.
-Claude Code's `CLAUDE_CONFIG_DIR` is passed through and does work. See
-`CLAUDE.md` for the measurements.
+Claude Code's `CLAUDE_CONFIG_DIR` is passed through and does work. Codex
+0.148.0, older than all of that, does not run the plugin's hooks at all
+(`MCP invocation is not available yet`), so nothing reaches IRC from it; use
+0.153 or later. See `CLAUDE.md` for the measurements.
 
 ## How it works
 
 The plugin bundles one MCP server, `irc`, which the harness starts with the
-session and stops with it. Every hook is an `mcp_tool` hook that hands the
+session and stops with it: `bin/agent-irc` (Claude Code) or the `sh -c`
+command in `.mcp.codex.json` (Codex) hands over to the getty-bun starter,
+which runs the committed bundle `dist/server.js` on the pinned Bun. Every hook is an `mcp_tool` hook that hands the
 event to that server, which formats a line and delivers it over the IRC
 connections it keeps open. Token counts come from the session transcript.
 Details in `docs/superpowers/specs/2026-09-05-agent-irc-design.md`.
 
 ## Development
 
+With Bun 1.4.5 on `PATH`:
+
 ```
-python3 -m unittest discover tests
+bun install           # the dev dependencies: TypeScript and Bun's types
+bun run typecheck
+bun test
+bun run build         # after any change under src/: rebuilds dist/server.js
+bun run check         # dist/server.js is byte-equal to a fresh build
 ```
 
-Tests use an in-process fake IRC server and never touch the network beyond
-`127.0.0.1`; CI runs them on Python 3.9, 3.10, 3.11, 3.12 and 3.13. See `CLAUDE.md` for the two-harness traps.
+`dist/server.js` is committed, because a user's machine runs it and never
+installs anything. Tests use an in-process fake IRC server
+(`tests/fakeirc.ts`; `bun tests/run_fakeirc.ts` runs it standalone) and never
+touch the network beyond `127.0.0.1`. See `CLAUDE.md` for the two-harness
+traps.
 
 **Debugging:** set `AGENT_IRC_DEBUG=1` in the environment the harness starts
 the server with to log every raw event, and any transcript read that fails

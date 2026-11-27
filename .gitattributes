@@ -1,4 +1,6 @@
-# Line endings stay LF in every checkout, whatever core.autocrlf says: the
-# MCP server entry point is a Python script with a shebang.
+# Line endings stay LF in every checkout, whatever core.autocrlf says:
+# bin/agent-irc is a sh script with a shebang, and bootstrap/getty-bun.* must
+# stay byte-equal to their render (a CRLF getty-bun.sh breaks the Git Bash
+# forwarding and the cmp check).
 * text=auto eol=lf
 *.exe binary
