@@ -22,9 +22,9 @@ only paths explicitly mapped to `main` in `OWNERS`; cards cover other agent work
 
 ## Check and commits
 
-`python3 -m unittest discover tests` and `"$(uv python find 3.9)" -m unittest discover tests`
-are the check; a card is done only when both pass for `agent-irc-reviewer`, because the
-`tomllib` fallback runs only below 3.11 and has twice shipped broken under a green 3.13 run.
+The check is skill `agent-irc-core`, "The check", on the pinned Bun 1.4.5: typecheck,
+`bun test`, `bun run check` (the committed `dist/server.js` equals a fresh build) and the starter
+`cmp` against the render; a card is done only when it passes for `agent-irc-reviewer`.
 Before assignment and review, look up every touched or planned path in `OWNERS` (the longest
 matching path wins); unknown ownership is fixed in `OWNERS` first. `agent-irc-release-manager`
 writes every commit and marks cards done; nobody else commits.
@@ -60,7 +60,8 @@ write there; none is wired to the AI, the user brings single entries in as cards
 - `winlaunch/` and `bin/agent-irc.exe` are a copy from the windows-developer hub; CI fails
   when the committed `.exe` differs from a build of `winlaunch/mcpoff.c`. Changes start there.
 - A live run costs real model usage and can reach real channels: a scratch `CODEX_HOME` does
-  not reach the server, so a Codex run reads the real config and mirrors into its channels.
+  not reach the server, so a Codex run reads the real config and mirrors into its channels
+  unless `HOME` is a temp dir too.
   Live runs only on a card; Codex, the real ircd and the user's installed copy only on the user's word.
-- CI is Ubuntu, Python 3.9 to 3.13; macOS and Windows run in no CI: every report names the
-  Python versions and harness versions that ran.
+- CI (`.github/workflows/`) runs on Ubuntu only; macOS and Windows run in no CI: every report names the Bun
+  version and the harness versions that ran.

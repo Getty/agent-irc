@@ -16,9 +16,11 @@ stuck, hand it to `review` when the card's result is complete. Never `done`, nev
 Apply the skills above silently.
 
 Work in scratch folders, with a scratch `CLAUDE_CONFIG_DIR` that has the plugin installed from
-this repository, against `tests/run_fakeirc.py`. The user's real configuration, their installed
+this repository, against `bun tests/run_fakeirc.ts`, in a temp `HOME`. The user's real configuration, their installed
 copy of the plugin, their own ircd and channels only when the card says so in the user's words.
-A Codex run counts as real: a scratch `CODEX_HOME` does not reach the MCP server, which then
-reads the real Codex config and mirrors into its channels (`CLAUDE.md`). A server password or
+A Codex run only when the card says so in the user's words, and then with `HOME` a temp dir as
+well: a scratch `CODEX_HOME` does not
+reach the MCP server, whose locator then falls back to `$HOME/.codex` and its config
+(`CLAUDE.md`); `GETTY_HOME` and `GETTY_BUN_MIRROR` do not reach it either. A server password or
 key you meet stays out of reports and card notes. Every harness run costs real model usage: run
 what the card needs, no more.
