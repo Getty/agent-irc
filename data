@@ -1,0 +1,19 @@
+---
+class: standard
+completed: 2026-11-27T14:16:22Z
+created: 2026-11-27T14:08:08Z
+id: 4
+priority: medium
+started: 2026-11-27T14:16:22Z
+status: done
+tags:
+- bun-port
+title: 'K1: OWNERS rows for the TypeScript tree'
+updated: 2026-11-27T14:16:38Z
+---
+
+Hub card agent-developer k12, part B (brief ~/briefs/2026-11-27-agent-irc-getty-bun-umbau.md; plan: part A report §4). Branch getty-bun. Path A (G1): mcp_tool hooks stay byte-identical, only the MCP server moves to TypeScript under the getty-bun starter. OWNERS rows for src/, dist/, bootstrap/, package.json, bun.lock, tsconfig.json -> agent-irc-worker. Main session, no worker; commit by release-manager.
+
+2026-11-27 14:15 reviewer: READY. File: OWNERS (main's). Rows src/, dist/, bootstrap/, scripts/, package.json, bun.lock, tsconfig.json, bunfig.toml -> agent-irc-worker; no clash with existing rows. Check: 299 tests OK on 3.13.5 and 3.9, vars unset and set.
+
+Committed as ef00106 on getty-bun.
