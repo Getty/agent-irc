@@ -1,0 +1,27 @@
+---
+claimed_at: 2026-11-27T17:15:24Z
+claimed_by: agent-irc
+class: standard
+completed: 2026-11-27T17:15:21Z
+created: 2026-11-27T14:08:36Z
+id: 13
+priority: medium
+started: 2026-11-27T17:15:21Z
+status: done
+tags:
+- bun-port
+title: 'K10: Rewrite the docs for the Bun port'
+updated: 2026-11-27T17:15:24Z
+---
+
+Hub card agent-developer k12, part B (brief ~/briefs/2026-11-27-agent-irc-getty-bun-umbau.md; plan: part A report §4). Branch getty-bun. Path A (G1): mcp_tool hooks stay byte-identical, only the MCP server moves to TypeScript under the getty-bun starter. README (requirements, first start without Bun does not mirror (G3 b), Windows off, macOS waits for getty-bun), CLAUDE.md (Shape, Rules, Python-only traps out, new traps for starter and Bun signals), spec. Owner: worker. Depends K7, K9.
+
+2026-11-27 17:02 Set A done (not committed): bin/agent-irc resolves bin/ with cd -P before .. (new symlinked-bin test, red under dash then green); manifests.test.ts dead Python-version test + header removed; server.ts header states the measured synchronous walk after prepare(). dist/server.js unchanged (bun run check 0: comments not in bundle). Starting docs (set B).
+
+2026-11-27 17:09 Done, uncommitted, two disjoint change sets. A (code/tests): bin/agent-irc cd -P before .. (symlinked bin/ resolved physically; new test in tests/entry.test.ts, red under dash then green); tests/manifests.test.ts dead Python-version test and header removed (unused existsSync import dropped); src/server.ts header now states the measured synchronous walk after prepare() (85-97 ms at 52 MB, ~1.7 ms/MB) and the installSignalHandlers comment says back-to-back signal order is not fixed (130 or 143). dist/server.js unchanged. B (docs): README (requirements, platforms, first start + workarounds, dev commands, example paths), PRIVACY.md (Bun download from GitHub, ~/.getty slot), CLAUDE.md (Shape, Rules, traps renamed to TS, Thread._handle out, starter/Bun traps, K9 table), spec (Bun-port markers 2026-11-27). Verified on Bun 1.4.5: typecheck 0; bun test 402 pass 5 skip 0 fail twice; starter e2e with the fixture mirror 3 pass; bun run check 0; starters cmp equal to .claude/skills/getty-bun-install/bootstrap/.
+
+2026-11-27 17:13 Review (agent-irc-reviewer) 2026-11-27: A ready; B ready, nits. Check on Bun 1.4.5 (harness bun, temp HOME/XDG_CACHE_HOME/BUN_INSTALL_CACHE_DIR/GETTY_HOME): install --frozen-lockfile 0, typecheck 0, bun test 402 pass 5 skip 0 fail, bun run check 0, both starters cmp-equal to .claude/skills/getty-bun-install/bootstrap/, '# version 1.4.5' present, starter e2e with file:// fixture mirror 3 pass. Old bin/agent-irc fails the symlinked-bin case under dash, new passes (checked in a temp copy). README ensure loop verified (starter ensure from another cwd -> state ready). Files: bin/agent-irc, src/server.ts, tests/entry.test.ts, tests/manifests.test.ts, README.md, PRIVACY.md, CLAUDE.md, spec. Nits for the worker: README.md:97-99 says a cut-off download 'may leave its partial archive (up to ~50 MB)' -- K9 (k12, CLAUDE.md:370-372) saw the orphaned curl finish the full 51 MB archive.zip plus a stale .installing in .staging/<id>/; README.md:81-83 'on a fast line that fits ... and either way the first session does not mirror' contradicts itself (K9 measured only the 15 s case; say the first session is not guaranteed / was not mirrored when the prompt preceded the server). Out of scope, pre-existing at 09a3af3: .github/workflows/test.yml still runs python3 -m unittest on a tree with no Python tests -> exit 5 'NO TESTS RAN' on 3.12/3.13 (red), vacuous green on 3.9-3.11; no CI runs bun at all. Needs a worker card before merge.
+
+2026-11-27 17:14 Review nits fixed, README.md only (uncommitted): 'The first start' intro no longer contradicts itself -- the start fits the 30 s on a fast line (~1.7 s from a local mirror) but the first session is not guaranteed to mirror: only if the server is up before the first prompt; likely not on a slow line, may be on a fast one (G3 b). Claude Code bullet: giving up does not stop the download; SIGKILL kills the starter before cleanup, the orphaned download finishes, the whole ~51 MB archive.zip plus a stale .installing stay in ~/.getty/runtimes/bun/.staging/<id>/, not removed by a later successful install; safe to delete (K9, CLAUDE.md trap). Docs only; section re-read for coherence; no tests run (brief: docs only).
+
+2026-11-27 17:15 Committed f426abf (part A) and 8c233e9 (part B), pushed to origin getty-bun. Review: agent-irc-reviewer passed A (ready) and B (ready, two README fixes asked for); the worker made exactly those two (first-start paragraph, leftover archive), checked by the main session against the reviewer's text. No Changes entry (K12 writes the release notes).
