@@ -1,0 +1,82 @@
+{"action":"create","agent":"Torsten Raudssus","detail":"backlog","task_id":1,"ts":"2026-11-26T19:20:57Z"}
+{"action":"create","agent":"Torsten Raudssus","detail":"backlog","task_id":2,"ts":"2026-11-26T19:21:06Z"}
+{"action":"move","agent":"Torsten Raudssus","detail":"todo","task_id":1,"ts":"2026-11-26T19:21:14Z"}
+{"action":"move","agent":"Torsten Raudssus","detail":"todo","task_id":2,"ts":"2026-11-26T19:21:19Z"}
+{"action":"create","agent":"Torsten Raudssus","detail":"todo","task_id":3,"ts":"2026-11-27T14:07:49Z"}
+{"action":"create","agent":"Torsten Raudssus","detail":"todo","task_id":4,"ts":"2026-11-27T14:08:08Z"}
+{"action":"create","agent":"Torsten Raudssus","detail":"todo","task_id":5,"ts":"2026-11-27T14:08:11Z"}
+{"action":"create","agent":"Torsten Raudssus","detail":"todo","task_id":6,"ts":"2026-11-27T14:08:14Z"}
+{"action":"create","agent":"Torsten Raudssus","detail":"todo","task_id":7,"ts":"2026-11-27T14:08:18Z"}
+{"action":"create","agent":"Torsten Raudssus","detail":"todo","task_id":8,"ts":"2026-11-27T14:08:21Z"}
+{"action":"create","agent":"Torsten Raudssus","detail":"todo","task_id":9,"ts":"2026-11-27T14:08:24Z"}
+{"action":"create","agent":"Torsten Raudssus","detail":"todo","task_id":10,"ts":"2026-11-27T14:08:27Z"}
+{"action":"create","agent":"Torsten Raudssus","detail":"todo","task_id":11,"ts":"2026-11-27T14:08:30Z"}
+{"action":"create","agent":"Torsten Raudssus","detail":"todo","task_id":12,"ts":"2026-11-27T14:08:33Z"}
+{"action":"create","agent":"Torsten Raudssus","detail":"todo","task_id":13,"ts":"2026-11-27T14:08:36Z"}
+{"action":"create","agent":"Torsten Raudssus","detail":"todo","task_id":14,"ts":"2026-11-27T14:08:40Z"}
+{"action":"create","agent":"Torsten Raudssus","detail":"todo","task_id":15,"ts":"2026-11-27T14:08:43Z"}
+{"action":"move","agent":"agent-irc-worker","detail":"in-progress","task_id":3,"ts":"2026-11-27T14:10:37Z"}
+{"action":"handoff","agent":"agent-irc-worker","detail":"review","task_id":3,"ts":"2026-11-27T14:12:40Z"}
+{"action":"edit","agent":"agent-irc-worker","detail":"review","task_id":3,"ts":"2026-11-27T14:15:32Z"}
+{"action":"edit","agent":"Torsten Raudssus","detail":"todo","task_id":4,"ts":"2026-11-27T14:15:35Z"}
+{"action":"edit","agent":"Torsten Raudssus","detail":"todo","task_id":5,"ts":"2026-11-27T14:15:38Z"}
+{"action":"move","agent":"Torsten Raudssus","detail":"done","task_id":4,"ts":"2026-11-27T14:16:22Z"}
+{"action":"move","agent":"Torsten Raudssus","detail":"done","task_id":5,"ts":"2026-11-27T14:16:25Z"}
+{"action":"move","agent":"agent-irc-worker","detail":"done","task_id":3,"ts":"2026-11-27T14:16:29Z"}
+{"action":"edit","agent":"agent-irc-worker","detail":"done","task_id":3,"ts":"2026-11-27T14:16:35Z"}
+{"action":"edit","agent":"Torsten Raudssus","detail":"done","task_id":4,"ts":"2026-11-27T14:16:38Z"}
+{"action":"edit","agent":"Torsten Raudssus","detail":"done","task_id":5,"ts":"2026-11-27T14:16:41Z"}
+{"action":"edit","agent":"Torsten Raudssus","detail":"todo","task_id":6,"ts":"2026-11-27T14:17:41Z"}
+{"action":"edit","agent":"Torsten Raudssus","detail":"todo","task_id":6,"ts":"2026-11-27T14:20:13Z"}
+{"action":"handoff","agent":"agent-irc","detail":"review","task_id":6,"ts":"2026-11-27T14:20:26Z"}
+{"action":"edit","agent":"agent-irc","detail":"review","task_id":6,"ts":"2026-11-27T14:22:28Z"}
+{"action":"edit","agent":"agent-irc","detail":"review","task_id":6,"ts":"2026-11-27T14:23:04Z"}
+{"action":"move","agent":"agent-irc","detail":"done","task_id":6,"ts":"2026-11-27T14:23:07Z"}
+{"action":"edit","agent":"Torsten Raudssus","detail":"todo","task_id":7,"ts":"2026-11-27T14:24:04Z"}
+{"action":"edit","agent":"Torsten Raudssus","detail":"todo","task_id":7,"ts":"2026-11-27T14:46:52Z"}
+{"action":"edit","agent":"Torsten Raudssus","detail":"todo","task_id":7,"ts":"2026-11-27T14:53:18Z"}
+{"action":"handoff","agent":"agent-irc","detail":"review","task_id":7,"ts":"2026-11-27T14:53:30Z"}
+{"action":"edit","agent":"agent-irc","detail":"review","task_id":7,"ts":"2026-11-27T14:58:00Z"}
+{"action":"edit","agent":"agent-irc","detail":"review","task_id":7,"ts":"2026-11-27T14:58:39Z"}
+{"action":"move","agent":"agent-irc","detail":"done","task_id":7,"ts":"2026-11-27T14:58:42Z"}
+{"action":"edit","agent":"Torsten Raudssus","detail":"todo","task_id":8,"ts":"2026-11-27T14:59:24Z"}
+{"action":"edit","agent":"Torsten Raudssus","detail":"todo","task_id":8,"ts":"2026-11-27T15:09:11Z"}
+{"action":"handoff","agent":"agent-irc","detail":"review","task_id":8,"ts":"2026-11-27T15:16:31Z"}
+{"action":"edit","agent":"agent-irc","detail":"review","task_id":8,"ts":"2026-11-27T15:16:43Z"}
+{"action":"edit","agent":"agent-irc","detail":"review","task_id":8,"ts":"2026-11-27T15:22:38Z"}
+{"action":"handoff","agent":"agent-irc","detail":"review","task_id":8,"ts":"2026-11-27T15:31:17Z"}
+{"action":"edit","agent":"agent-irc","detail":"review","task_id":8,"ts":"2026-11-27T15:34:46Z"}
+{"action":"handoff","agent":"agent-irc","detail":"review","task_id":8,"ts":"2026-11-27T15:36:05Z"}
+{"action":"edit","agent":"agent-irc","detail":"review","task_id":8,"ts":"2026-11-27T15:36:32Z"}
+{"action":"move","agent":"agent-irc","detail":"done","task_id":8,"ts":"2026-11-27T15:36:35Z"}
+{"action":"edit","agent":"Torsten Raudssus","detail":"todo","task_id":9,"ts":"2026-11-27T15:38:39Z"}
+{"action":"edit","agent":"Torsten Raudssus","detail":"todo","task_id":9,"ts":"2026-11-27T15:46:37Z"}
+{"action":"handoff","agent":"agent-irc","detail":"review","task_id":9,"ts":"2026-11-27T15:58:47Z"}
+{"action":"edit","agent":"agent-irc","detail":"review","task_id":9,"ts":"2026-11-27T16:05:07Z"}
+{"action":"edit","agent":"agent-irc","detail":"review","task_id":9,"ts":"2026-11-27T16:07:08Z"}
+{"action":"handoff","agent":"agent-irc","detail":"review","task_id":9,"ts":"2026-11-27T16:13:44Z"}
+{"action":"edit","agent":"agent-irc","detail":"review","task_id":9,"ts":"2026-11-27T16:18:17Z"}
+{"action":"edit","agent":"agent-irc","detail":"review","task_id":9,"ts":"2026-11-27T16:18:27Z"}
+{"action":"move","agent":"agent-irc","detail":"done","task_id":9,"ts":"2026-11-27T16:19:05Z"}
+{"action":"edit","agent":"agent-irc","detail":"done","task_id":9,"ts":"2026-11-27T16:19:07Z"}
+{"action":"edit","agent":"Torsten Raudssus","detail":"todo","task_id":10,"ts":"2026-11-27T16:20:17Z"}
+{"action":"edit","agent":"Torsten Raudssus","detail":"todo","task_id":10,"ts":"2026-11-27T16:29:18Z"}
+{"action":"handoff","agent":"agent-irc","detail":"review","task_id":10,"ts":"2026-11-27T16:29:20Z"}
+{"action":"edit","agent":"agent-irc","detail":"review","task_id":10,"ts":"2026-11-27T16:33:31Z"}
+{"action":"edit","agent":"agent-irc","detail":"review","task_id":10,"ts":"2026-11-27T16:34:18Z"}
+{"action":"move","agent":"agent-irc","detail":"done","task_id":10,"ts":"2026-11-27T16:34:21Z"}
+{"action":"edit","agent":"Torsten Raudssus","detail":"todo","task_id":12,"ts":"2026-11-27T17:00:50Z"}
+{"action":"handoff","agent":"agent-irc","detail":"review","task_id":12,"ts":"2026-11-27T17:00:53Z"}
+{"action":"edit","agent":"Torsten Raudssus","detail":"todo","task_id":13,"ts":"2026-11-27T17:02:46Z"}
+{"action":"edit","agent":"agent-irc","detail":"review","task_id":12,"ts":"2026-11-27T17:09:46Z"}
+{"action":"handoff","agent":"agent-irc","detail":"review","task_id":13,"ts":"2026-11-27T17:09:49Z"}
+{"action":"edit","agent":"agent-irc","detail":"review","task_id":13,"ts":"2026-11-27T17:13:31Z"}
+{"action":"edit","agent":"Torsten Raudssus","detail":"todo","task_id":14,"ts":"2026-11-27T17:13:34Z"}
+{"action":"handoff","agent":"agent-irc","detail":"review","task_id":13,"ts":"2026-11-27T17:14:45Z"}
+{"action":"move","agent":"agent-irc","detail":"done","task_id":13,"ts":"2026-11-27T17:15:21Z"}
+{"action":"edit","agent":"agent-irc","detail":"done","task_id":13,"ts":"2026-11-27T17:15:24Z"}
+{"action":"edit","agent":"agent-irc","detail":"todo","task_id":14,"ts":"2026-11-27T17:15:28Z"}
+{"action":"move","agent":"agent-irc","detail":"done","task_id":14,"ts":"2026-11-27T17:15:31Z"}
+{"action":"edit","agent":"agent-irc","detail":"review","task_id":12,"ts":"2026-11-27T17:15:34Z"}
+{"action":"move","agent":"agent-irc","detail":"done","task_id":12,"ts":"2026-11-27T17:15:38Z"}
+{"action":"edit","agent":"Torsten Raudssus","detail":"todo","task_id":11,"ts":"2026-11-27T17:16:21Z"}
