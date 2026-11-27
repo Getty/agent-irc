@@ -528,10 +528,20 @@ describe("AppTests", () => {
     async () => {
       // Python reads the transcript on its dispatcher thread; here the read
       // shares the loop that answers JSON-RPC, so it has to give way to it.
+      //
+      // The bound is relative, so it holds on a slow CI runner as well:
+      // without the read-ahead the ping waits for the whole priming (~1.7 s
+      // here), with it for one chunk (~15 ms here, ~275 ms on one shared
+      // core), so it has to come within a quarter of the time the priming
+      // took. And the drain gets all the time it needs: on one core the
+      // priming outlasts DRAIN_BUDGET's 2 s, and shutdown would cut it off
+      // before the turn line this test also checks.
+      DRAIN_BUDGET.seconds = 120;
       const transcript = join(tmp, "t.jsonl");
       bigTranscript(transcript, 50);
       let pingDue = 0;
       let answered = 0;
+      let turned = 0;
       let out = "";
       async function* input(): AsyncGenerator<string> {
         yield rpc(1, "initialize", { clientInfo: { name: "claude-code" } }) +
@@ -553,19 +563,28 @@ describe("AppTests", () => {
           },
         },
         log: (l) => logs.push(l),
-        connectionFactory: factory,
+        connectionFactory: (...a) => {
+          const connection = factory(...a);
+          const send = connection.sendMessage.bind(connection);
+          connection.sendMessage = (text: string) => {
+            if (turned === 0 && text.startsWith("✔ turn")) turned = performance.now();
+            send(text);
+          };
+          return connection;
+        },
         cwd,
       });
       await app.run();
       expect(answered).toBeGreaterThan(0);
-      expect(answered - pingDue).toBeLessThan(100);
+      expect(turned).toBeGreaterThan(answered);
+      expect(answered - pingDue).toBeLessThan((turned - pingDue) / 4);
       const messages = FakeConnection.instances[0]!.messages;
       expect(messages[0]).toBe(`▶ session s · claude claude-x · ${cwd}`);
       expect(messages[1]).toBe("» x");
       // primed: the backlog's tokens are not this turn's
       expect(messages[2]).toMatch(/^✔ turn · .* · 0 tools · claude-x$/);
     },
-    30000,
+    60000,
   );
 
   test(

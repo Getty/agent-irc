@@ -165,8 +165,14 @@ tests/*.test.ts              bun:test; tests/fakeirc.ts is the fake ircd,
   would push the next hook past its 5 s timeout and hold signals and IRC
   I/O as long. With it the same probe answers in 0.026 s at 5, 20 and 50 MB
   (Python: 0.000 s; Bun 1.4.5, 2026-11-27). `server.test.ts`, "a call
-  arriving while a large transcript is primed is answered at once", holds
-  it under 100 ms on 50 MB. What is left is synchronous: after `prepare()`,
+  arriving while a large transcript is primed is answered at once", primes
+  50 MB and bounds the ping relatively, so a slow runner passes too: it has
+  to be answered within a quarter of the time from sending it to the
+  `✔ turn` line, with `DRAIN_BUDGET` at 120 s for that test (on one core
+  the priming outlasts the 2 s default and shutdown would cut the turn line
+  off) and a 60 s test timeout. Without the read-ahead it still fails:
+  1560-1688 ms against bounds of 428-447 ms, on one core 3418 against
+  889 ms (the K8 review, Bun 1.4.5, 2026-11-27). What is left is synchronous: after `prepare()`,
   `Session.handle` walks the parsed records in one go -- 85-97 ms for a 52 MB
   transcript, about 1.7 ms/MB, the loop stalled up to ~120 ms in all (the K6
   re-review, Bun 1.4.5, 2026-11-27) -- so a call that lands then waits that
