@@ -1,0 +1,26 @@
+---
+claimed_at: 2026-11-27T17:15:38Z
+claimed_by: agent-irc
+class: standard
+completed: 2026-11-27T17:15:38Z
+created: 2026-11-27T14:08:33Z
+id: 12
+priority: medium
+started: 2026-11-27T17:15:38Z
+status: done
+tags:
+- bun-port
+- live-check
+title: 'K9: Live check: first start and MCP startup limits'
+updated: 2026-11-27T17:15:38Z
+---
+
+Hub card agent-developer k12, part B (brief ~/briefs/2026-11-27-agent-irc-getty-bun-umbau.md; plan: part A report §4). Branch getty-bun. Path A (G1): mcp_tool hooks stay byte-identical, only the MCP server moves to TypeScript under the getty-bun starter. Claude Code with a scratch CLAUDE_CONFIG_DIR in a temp HOME, Codex only with its own CODEX_HOME in a temp HOME (the real ~/.codex is never read), fake ircd only: first start without a Bun slot over a slow local mirror; measure MCP startup timeout, whether the host reconnects, what the hooks report (G3 b transition). Owner: live-check -> findings to worker. Depends K7.
+
+2026-11-27 17:00 Live check done 2026-11-27 (claude 2.1.332, codex 0.148.0 -- not 0.153/0.154 of earlier rows). Claude: MCP connect timeout 30000ms (MCP_TIMEOUT knob works, 66.8s install connected at 90000); mcp_tool hook waits only 5s for a connecting server then skips (first UserPromptSubmit lost -> no mirror that session); after CONNECT_TIMEOUT Claude writes mcp-needs-auth-cache.json and does not start the server in the next session for ~15 min (14 min skipped, 16 min started), no reconnect in-session; at exit/timeout SIGINT,TERM,KILL ladder kills the sh starter, orphan curl finishes archive.zip into .staging, never swept. Codex 0.148.0: handshake timeout 29.999s, starter killed at +30s with group, no needs-auth cache, next session starts; BUT mcp_tool hooks are skipped at load ('MCP invocation is not available yet'), warm too -> nothing mirrored on this binary. Warm Claude start mirrors fine, one QUIT on SIGINT+SIGTERM. Full report in the agent's final message; evidence log /tmp/airc-k12-k12-evidence.log.
+
+2026-11-27 17:00 Live check complete, report delivered to the main session; findings for CLAUDE.md/provider (agent-bun-runtime rule (a)) are in it. Temp dirs removed; evidence log /tmp/airc-k12-k12-evidence.log.
+
+2026-11-27 17:09 Findings recorded by the worker on k13 (uncommitted, branch getty-bun): CLAUDE.md new section 'The starter and Bun' (first-start trap with all K9 numbers, give-up ladder, leftovers, needs-auth cache, curl guard) and table 'The Bun port (K9, 2026-11-27)'; Codex 0.148.0 hook skip added to the Codex limitations trap; GETTY_HOME/GETTY_BUN_MIRROR not passed added to the CODEX_HOME trap; -p SessionEnd wording for 2.1.332; README 'The first start' with MCP_TIMEOUT / startup_timeout_sec / starter ensure workarounds.
+
+2026-11-27 17:15 Live-check findings recorded in commit 8c233e9 (CLAUDE.md, README), pushed to origin getty-bun.
