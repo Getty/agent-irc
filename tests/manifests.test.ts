@@ -49,16 +49,21 @@ describe("ManifestTests", () => {
   });
 
   test("codex mcp json is a self locating bootstrap", () => {
+    // Codex substitutes nothing in a plugin's MCP config and passes no
+    // install root, so a sh -c locator finds the starter (tests in
+    // codex_bootstrap.test.ts). No "${": a harness that did substitute would
+    // otherwise rewrite the script.
     const m = load(".mcp.codex.json");
-    expect(m.irc.command).toBe("python3");
-    // "-I" keeps the session cwd off sys.path (see CLAUDE.md).
-    expect(m.irc.args[0]).toBe("-I");
-    expect(m.irc.args[1]).toBe("-c");
-    const code: string = m.irc.args[2];
-    expect(code).toContain("plugins");
-    expect(code).toContain("agent-irc");
+    expect(Object.keys(m)).toEqual(["irc"]);
+    expect(m.irc.command).toBe("sh");
+    expect(m.irc.args).toHaveLength(2);
+    expect(m.irc.args[0]).toBe("-c");
+    const code: string = m.irc.args[1];
     expect(code).toContain("CODEX_HOME");
+    expect(code).toContain("/plugins/cache/*/agent-irc/*/bootstrap/getty-bun.sh");
+    expect(code).toContain("run dist/server.js codex");
     expect(code).not.toContain("${");
+    expect(code).not.toContain("python");
   });
 
   test("codex hooks address the bare server name", () => {
@@ -70,9 +75,25 @@ describe("ManifestTests", () => {
   });
 
   test("codex hooks use a per event field whitelist", () => {
-    // Codex hard-fails an mcp_tool hook whose input names a placeholder it
-    // does not recognise for that event; each set is what was confirmed live
-    // (2026-09-05, Codex 0.153.4). See the Python test for the full story.
+    // Live verification (2026-09-05, Codex 0.153.4): an mcp_tool hook's
+    // "input" template is rejected outright -- no tools/call ever sent, no
+    // diagnostic beyond "Failed" -- if it references a `${name}` placeholder
+    // Codex doesn't statically recognize for that event. Unlike Claude Code
+    // (which substitutes an empty string for a field an event doesn't carry),
+    // Codex hard-fails the whole hook, and "recognized" is narrower than
+    // "present in the event's own JSON": agent_id/agent_type DO appear in
+    // Codex's raw PreToolUse/PostToolUse payload for a subagent's own tool
+    // call (confirmed by dumping it to a "type": "command" hook), yet using
+    // them in a PreToolUse/PostToolUse mcp_tool template still hard-fails the
+    // hook -- so each set below is only what was confirmed live, via that
+    // same dump technique, to work for that hook type. Separately:
+    // SubagentStart/SubagentStop's mcp_tool hooks never call tools/call at
+    // all under Codex 0.153.4, with any input map including the base fields
+    // alone -- a Codex limitation, not a field-naming problem, so their
+    // fields are kept as the most useful set on the chance a future Codex
+    // fixes the dispatch (see CLAUDE.md). Interrupt, PermissionRequest and
+    // PostCompact could not be triggered from `codex exec` and conservatively
+    // get only the fields common to every other event.
     const base = ["event", "session_id", "cwd", "transcript_path", "model", "turn_id"];
     const fields: Record<string, string[]> = {
       UserPromptSubmit: [...base, "prompt"],
@@ -110,6 +131,8 @@ describe("ManifestTests", () => {
   });
 
   test("version.ts is the Python server's version while both exist", () => {
+    // agent_irc/__init__.py is the release manager's (OWNERS) and goes with
+    // the next version stamp; until then it must not disagree.
     const init = join(ROOT, "agent_irc", "__init__.py");
     if (!existsSync(init)) return;
     const m = /__version__ = "([^"]+)"/.exec(readFileSync(init, "utf8"));

@@ -1,8 +1,6 @@
 # Write ownership: <path><TAB><owner>. An exact path wins, else the longest
 # directory prefix (a path ending in /). Every tracked path needs a row.
 
-agent_irc/	agent-irc-worker
-agent_irc/__init__.py	agent-irc-release-manager
 bin/	agent-irc-worker
 bin/agent-irc.exe	main
 hooks/	agent-irc-worker

@@ -1,18 +1,36 @@
-#!/usr/bin/env python3
-"""agent-irc MCP server entry point. Started by the harness, see .mcp.json.
-
-agent-irc is off on Windows. There Claude Code starts agent-irc.exe next to
-this file instead (mcpoff, see winlaunch/): a server that connects, offers
-the tools named below and does nothing, so the mcp_tool hooks stay quiet.
+#!/bin/sh
+# agent-irc MCP server entry point. Started by the harness, see .mcp.json.
+#
+# Runs dist/server.js on the plugin's pinned Bun through the getty-bun starter
+# (bootstrap/getty-bun.sh), which installs that Bun on first use. The plugin
+# root is the parent of this file's directory, found from its own path (a
+# symlink chain followed), never from the working directory.
+#
+# agent-irc is off on Windows. There Claude Code starts agent-irc.exe next to
+# this file instead (mcpoff, see winlaunch/): a server that connects, offers
+# the tools named below and does nothing, so the mcp_tool hooks stay quiet.
 # mcpoff: tools event
-"""
 
-import os
-import sys
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
-
-from agent_irc.server import main  # noqa: E402
-
-if __name__ == "__main__":
-    main()
+self=$0
+while [ -L "$self" ]; do
+    link=$(readlink -- "$self") || break
+    case $link in
+    /*) self=$link ;;
+    *)
+        # A relative target is relative to the link's own directory.
+        case $self in
+        */*) self=${self%/*}/$link ;;
+        *) self=$link ;;
+        esac
+        ;;
+    esac
+done
+case $self in
+*/*) dir=${self%/*} ;;
+*) dir=. ;;
+esac
+root=$(CDPATH='' cd -- "$dir/.." 2>/dev/null && pwd -P) || {
+    printf 'agent-irc: cannot locate the plugin root from %s\n' "$0" >&2
+    exit 1
+}
+exec sh "$root/bootstrap/getty-bun.sh" run dist/server.js claude-code

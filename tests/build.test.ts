@@ -1,6 +1,6 @@
 // The Bun build scaffold (k6): the runtime pin and the committed bundle.
 import { describe, expect, test } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 const root = join(import.meta.dir, "..");
@@ -83,5 +83,28 @@ describe("dist/server.js", () => {
     const bundle = read("dist/server.js");
     expect(bundle).not.toContain(root);
     expect(bundle).not.toMatch(/\/home\/|\/tmp\/|\/Users\//);
+  });
+});
+
+// The getty-bun starters are copies of the getty-bun-install render
+// (agent-bun-runtime v0.1.0, vars.bun_version 1.4.5): never edited here.
+describe("bootstrap/", () => {
+  const rendered = ".claude/skills/getty-bun-install/bootstrap";
+
+  for (const name of ["getty-bun.sh", "getty-bun.ps1"]) {
+    test.skipIf(!existsSync(join(root, rendered, name)))(`${name} equals the rendered starter byte for byte`, () => {
+      expect(readFileSync(join(root, "bootstrap", name)).equals(readFileSync(join(root, rendered, name)))).toBe(true);
+    });
+
+    test(`${name} is LF only and not executable, as cp -p of the render leaves it`, () => {
+      expect(read(`bootstrap/${name}`)).not.toContain("\r");
+      expect(statSync(join(root, "bootstrap", name)).mode & 0o111).toBe(0);
+    });
+  }
+
+  test("both starters pin the Bun of package.json", () => {
+    const pin = (JSON.parse(read("package.json")) as { gettyBun: { bunVersion: string } }).gettyBun.bunVersion;
+    expect(read("bootstrap/getty-bun.sh").split("\n")).toContain(`# version ${pin}`);
+    expect(read("bootstrap/getty-bun.ps1").split(/\r?\n/)).toContain(`# version ${pin}`);
   });
 });
