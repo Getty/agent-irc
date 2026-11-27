@@ -10,3 +10,6 @@ tmp-verify/
 
 # Claude Code worktrees (claude --worktree / isolated agents) -- never commit
 /.claude/worktrees/
+
+# Bun dev dependencies (bun install) -- never commit
+node_modules/
