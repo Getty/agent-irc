@@ -1,0 +1,27 @@
+---
+claimed_at: 2026-11-27T14:23:04Z
+claimed_by: agent-irc
+class: standard
+completed: 2026-11-27T14:23:07Z
+created: 2026-11-27T14:08:14Z
+id: 6
+priority: medium
+started: 2026-11-27T14:23:07Z
+status: done
+tags:
+- bun-port
+title: 'K3: Scaffold the Bun build'
+updated: 2026-11-27T14:23:07Z
+---
+
+Hub card agent-developer k12, part B (brief ~/briefs/2026-11-27-agent-irc-getty-bun-umbau.md; plan: part A report §4). Branch getty-bun. Path A (G1): mcp_tool hooks stay byte-identical, only the MCP server moves to TypeScript under the getty-bun starter. package.json with gettyBun {contractVersion 1, bunVersion 1.4.5} and NO SDK dependency (G2 a), bun.lock, tsconfig, bun build --target=bun into committed dist/server.js, a rebuild+cmp script; check byte stability of bun build. Owner: worker. Depends K1.
+
+2026-11-27 14:17 Worker started K3 scaffold (package.json, tsconfig, src/server.ts placeholder, bun:test smoke test, build+check scripts, byte-stability probe).
+
+2026-11-27 14:20 Byte stability (Bun 1.4.5 linux-x64): dist identical built twice in place; identical from a fresh clone at '/tmp/k3 clone ä' with another HOME/XDG_CACHE_HOME after bun install --frozen-lockfile; a 5-module probe (nested dirs, node:net, a node_modules package) identical across two paths, HOMEs and TZ. Trap: the '// <path>' comments in the bundle are relative to the cwd (built from /tmp the probe differs at byte 12), so scripts/dist.sh cds to the repo root. The requirement schema skill is skilletor-installed and gitignored, so a byte copy lives in tests/fixtures with a drift test that skips when the skill is absent. Found: node_modules/ is not in .gitignore (main owns it).
+
+2026-11-27 14:20 Done: package.json (private, type module, no version, gettyBun 1.4.5, devDeps @types/bun 1.4.5 + typescript 7.0.2, scripts build/check/typecheck/test), bun.lock, bunfig.toml ([run] bun=true, no Node needed), tsconfig.json (strict), src/server.ts placeholder (not wired), dist/server.js (// @bun), scripts/dist.sh build|check (pinned-version guard, temp build + cmp), tests/build.test.ts + tests/fixtures schema copy. Verified: typecheck 0, bun test 7 pass 0 fail, check 0 (1 on a tampered dist), python 3.13.5 and 3.9.25 299 OK each. Needs .gitignore line node_modules/ from main.
+
+2026-11-27 14:22 Review (agent-irc-reviewer): READY. Files: package.json, bun.lock, bunfig.toml, tsconfig.json, src/server.ts, dist/server.js, scripts/dist.sh, tests/build.test.ts, tests/fixtures/getty-bun-requirement.schema.json, tests/fixtures/README.md, .gitignore (main). Ran with harness Bun 1.4.5, no Node, temp HOME/XDG_CACHE_HOME/BUN_INSTALL_CACHE_DIR, on a copy of the tree: bun install --frozen-lockfile 0, bun run typecheck 0, bun test 6 pass 1 skip 0 fail (skip = drift test, skill absent in the copy; schema copy cmp-equal to the installed skill's), bun run check 0. Fresh clone + overlay at another path (space, umlaut), other HOME, TZ=Asia/Tokyo: build cmp-equal to the repo's dist/server.js; check from cwd / passes; tampered dist exits 1; fake bun 1.4.6 refused (1); no arg exits 2. python3 3.13.5 and 3.9.25: 299 tests OK each. OWNERS: all paths worker except .gitignore (main). No hook, MCP, stdout or config change. Nits: byte stability shown on one host only (plan K3 says two machines; K8 CI is the second); dist.sh:19 sed reads the pin only from one-key-per-line package.json (fails safe); build.test.ts:39 checks type only for string; src/server.ts:1 mixes card id k6 with plan K6.
+
+2026-11-27 14:23 Committed 1e52b12 on getty-bun, pushed to origin getty-bun.
