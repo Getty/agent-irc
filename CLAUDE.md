@@ -47,6 +47,21 @@ tests/                       unittest; tests/fakeirc.py is the fake ircd
   also did not know, so inbound would have been dead on Python < 3.11 while
   working everywhere else. Booleans are in now — the next new type will not
   be, so check this list before adding a setting.
+- The TypeScript port (`src/`, branch `getty-bun`) has no TOML fallback:
+  `config.ts` reads `config.toml` with `Bun.TOML.parse`, which read every
+  value form above (strings, string arrays, integers, floats, booleans, the
+  quoted `[projects."…"]` table) in a probe on Bun 1.4.5 (2026-11-27). It is
+  not tomllib, though, and a differential run against the Python modules
+  found four disagreements: a leading byte order mark (tomllib refuses the
+  file, Bun skips it; `parseToml` now refuses it too), a trailing comma in an
+  inline table (Bun accepts, tomllib refuses), an integer beyond ±2^53 (Bun
+  refuses the whole file, trust markers included; tomllib reads it), and a
+  whole-valued float such as `flood_burst = 4.0` (Bun gives the number 4, so
+  the integer settings take it where Python ignores it). The last three are
+  open. `settings.json` has no such gap: `src/py.ts`'s `loads` keeps `4.0` a
+  float, as Python's `json` does. Where Python 3.9 and 3.11+ differ
+  (`fnmatch` ranges, `datetime.fromisoformat`, the TOML fallback), the port
+  follows 3.13.
 - The MCP loop is the only writer to stdout. Everything else logs to stderr.
 - `tools/call` must return immediately. Formatting, transcript reads and IRC
   I/O happen on other threads.
