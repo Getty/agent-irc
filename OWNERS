@@ -7,6 +7,14 @@ bin/	agent-irc-worker
 bin/agent-irc.exe	main
 hooks/	agent-irc-worker
 tests/	agent-irc-worker
+src/	agent-irc-worker
+dist/	agent-irc-worker
+bootstrap/	agent-irc-worker
+scripts/	agent-irc-worker
+package.json	agent-irc-worker
+bun.lock	agent-irc-worker
+tsconfig.json	agent-irc-worker
+bunfig.toml	agent-irc-worker
 .claude-plugin/	agent-irc-worker
 .codex-plugin/	agent-irc-release-manager
 .mcp.json	agent-irc-worker
