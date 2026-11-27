@@ -29,7 +29,9 @@ case $self in
 */*) dir=${self%/*} ;;
 *) dir=. ;;
 esac
-root=$(CDPATH='' cd -- "$dir/.." 2>/dev/null && pwd -P) || {
+# -P first, then `..`: resolve the directory itself before stepping up, or a
+# symlinked bin/ would lead to the link's parent instead of the plugin root.
+root=$(CDPATH='' cd -P -- "$dir" 2>/dev/null && cd -P .. && pwd -P) || {
     printf 'agent-irc: cannot locate the plugin root from %s\n' "$0" >&2
     exit 1
 }

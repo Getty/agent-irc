@@ -1,8 +1,8 @@
-// Port of tests/test_manifests.py: describe = the Python TestCase, test = its method.
-// The hook files and manifests are the same ones the Python suite checks;
-// only test_versions_match changes, from agent_irc.__version__ to src/version.ts.
+// The hook files and manifests (ported from the Python suite's
+// tests/test_manifests.py: describe = its TestCase, test = its method).
+// The version the Codex manifest must carry is src/version.ts's VERSION.
 import { describe, expect, test } from "bun:test";
-import { accessSync, constants, existsSync, readFileSync, statSync } from "node:fs";
+import { accessSync, constants, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { VERSION } from "../src/version.js";
 
@@ -128,15 +128,6 @@ describe("ManifestTests", () => {
   test("versions match", () => {
     expect("version" in load(".claude-plugin/plugin.json")).toBe(false);
     expect(load(".codex-plugin/plugin.json").version).toBe(VERSION);
-  });
-
-  test("version.ts is the Python server's version while both exist", () => {
-    // agent_irc/__init__.py is the release manager's (OWNERS) and goes with
-    // the next version stamp; until then it must not disagree.
-    const init = join(ROOT, "agent_irc", "__init__.py");
-    if (!existsSync(init)) return;
-    const m = /__version__ = "([^"]+)"/.exec(readFileSync(init, "utf8"));
-    expect(m?.[1]).toBe(VERSION);
   });
 
   test("mcp json", () => {

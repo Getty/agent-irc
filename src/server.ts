@@ -1,14 +1,18 @@
 // Wire the MCP loop, the event queue, configuration, session and IRC
 // connections (spec §3, §6; port of agent_irc/server.py).
 //
-// Python runs the MCP loop on the main thread and hands events to a
+// The Python server ran the MCP loop on the main thread and handed events to a
 // dispatcher thread; here both share Bun's event loop. onEvent only queues
 // and starts the drain a macrotask later, so a tools/call is answered before
 // its event is formatted, its transcript read or a line sent to IRC. The
 // drain handles one event after another, in arrival order, and reads every
 // transcript ahead in chunks with a macrotask turn between them
-// (Session.prepare), so a later call -- or a signal, or IRC I/O -- waits
-// for one chunk at most, never for a whole resumed transcript.
+// (Session.prepare), so reading and parsing a resumed transcript never holds
+// a later call -- or a signal, or IRC I/O -- for more than one chunk. What
+// follows prepare() is not chunked: emit() then walks the parsed records
+// synchronously, measured at 85-97 ms for a 52 MB transcript (about
+// 1.7 ms/MB, the loop stalled up to ~120 ms in all), so a call arriving then
+// waits that long.
 import { writeSync } from "node:fs";
 import { constants, homedir } from "node:os";
 import { loadConfig, type Config, type Env, type Server } from "./config.js";
@@ -334,9 +338,11 @@ const SIGNALS = ["SIGTERM", "SIGINT", "SIGHUP"] as const;
  * SIGTERM, SIGINT and SIGHUP stop the server: onStop(128 + signum).
  *
  * Only the first signal counts. Claude Code sends SIGINT and ~100ms later
- * SIGTERM (live-observed 2026-09-05, Task 20); Bun, given both at once,
- * delivered SIGTERM first (part A report §3.3) -- either way the second one
- * lands while shutdown() is still waiting for the QUIT, and is only logged.
+ * SIGTERM (live-observed 2026-09-05, Task 20). Bun, given both back to back,
+ * keeps no fixed order: SIGTERM came first in 3/3 part A probes (report
+ * §3.3), but the exit code of such a pair is 130 or 143 -- either way the
+ * second one lands while shutdown() is still waiting for the QUIT, and is
+ * only logged.
  * isStopped covers an EOF-triggered shutdown already under way: a signal then
  * is logged too, and the exit code stays the EOF's 0.
  */

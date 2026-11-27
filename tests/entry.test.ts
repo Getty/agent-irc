@@ -73,6 +73,18 @@ describe("bin/agent-irc", () => {
     expect(r.out.split("\n")[0]).toBe(`${root}/bootstrap/getty-bun.sh`);
   });
 
+  test("resolves a symlinked bin/ directory physically, not lexically", () => {
+    // The file itself is no link here, only the directory it is reached
+    // through: `cd "$dir/.."` would land in the link's parent.
+    const root = fakeRoot();
+    const elsewhere = realpathSync(mkdtempSync(join(tmpdir(), "airlink.")));
+    temps.push(elsewhere);
+    symlinkSync(join(root, "bin"), join(elsewhere, "linkbin"));
+    const r = run(join(elsewhere, "linkbin", "agent-irc"), tmpdir());
+    expect(r.err).toBe("");
+    expect(r.out.split("\n")[0]).toBe(`${root}/bootstrap/getty-bun.sh`);
+  });
+
   test("passes the starter's exit code through", () => {
     const root = fakeRoot();
     writeFileSync(join(root, "bootstrap", "getty-bun.sh"), "exit 143\n");
