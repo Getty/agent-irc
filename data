@@ -1,0 +1,21 @@
+---
+claimed_at: 2026-11-27T17:15:31Z
+claimed_by: agent-irc
+class: standard
+completed: 2026-11-27T17:15:31Z
+created: 2026-11-27T14:08:40Z
+id: 14
+priority: medium
+started: 2026-11-27T17:15:31Z
+status: done
+tags:
+- bun-port
+title: 'K11: Rewrite the team''s check for Bun'
+updated: 2026-11-27T17:15:31Z
+---
+
+Hub card agent-developer k12, part B (brief ~/briefs/2026-11-27-agent-irc-getty-bun-umbau.md; plan: part A report §4). Branch getty-bun. Path A (G1): mcp_tool hooks stay byte-identical, only the MCP server moves to TypeScript under the getty-bun starter. agent-irc-core/SKILL.md, agent-irc-worker.md, agent-irc-reviewer.md, agent-irc-rules.md: bun test + typecheck + dist/starter cmp instead of Python 3.13 + 3.9. Main session. Depends K7.
+
+2026-11-27 17:13 Review (agent-irc-reviewer) 2026-11-27: changes requested (small). Files: .claude/agents/agent-irc-{worker,reviewer,release-manager,live-check}.md, .claude/rules/agent-irc-rules.md, .claude/skills/agent-irc-core/SKILL.md. Commands/paths exist (package.json typecheck/test/check, scripts/dist.sh, src/version.ts, tests/run_fakeirc.ts, .claude/skilletor.json vars.bun_version, bunfig.toml); no Python check left in .claude/. Blocking: agent-irc-rules.md 'CI is Ubuntu on Bun 1.4.5' is false -- .github/workflows/test.yml runs Python 3.9-3.13 unittest (exits 5 on 3.12+, 0 tests), ci.yml only the mcpoff cmp; nothing in CI runs Bun. Nits: SKILL.md 'bun test ... ~8 s' (measured 16.4 s); CLAUDE.md Rules says bun test twice for the timing tests, skill/rules/agents say once; live-check.md 'A Codex run counts as real unless HOME is a temp dir' loosens rules' 'Codex ... only on the user's word' -- say which wins. Check run: same Bun 1.4.5 check as noted on k13, all green.
+
+2026-11-27 17:15 Committed 6ec5b3f, pushed to origin getty-bun. Review: agent-irc-reviewer changes requested (false CI sentence in agent-irc-rules.md, plus nits: skill timing, run-twice note, live-check Codex wording); the main session fixed all four. Not re-reviewed.
