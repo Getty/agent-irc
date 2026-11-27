@@ -62,6 +62,47 @@ tests/                       unittest; tests/fakeirc.py is the fake ircd
   float, as Python's `json` does. Where Python 3.9 and 3.11+ differ
   (`fnmatch` ranges, `datetime.fromisoformat`, the TOML fallback), the port
   follows 3.13.
+- `src/irc.ts` is `irc.py` without the thread: one async loop on Bun's event
+  loop, `read(timeout)` waking on socket data, a queued line or `beginClose`
+  instead of `select()`. Bytes, order and the greeting/drain/QUIT budgets are
+  Python's; a differential run (2026-11-27, Bun 1.4.5, Python 3.13) put both
+  clients against the same fake ircd, 22 scenarios x 3 seeds, and got
+  identical lines in 64 of 66. The two that differ are LINELEN=140 with the
+  mask still unknown and a burst of 1000 that runs dry: TS writes faster, so
+  it reads the JOIN echo (and with it the real, shorter mask) at a different
+  point of the burst and splits a few lines elsewhere -- a timing effect,
+  every line within its 140 bytes either way. What changed shape:
+  `start()`/`isAlive()`/`join()`/`close()` are `Thread`'s, `join` and
+  `close` return Promises; `TLS_READ_TIMEOUT` is gone, since a Node socket
+  never blocks in a read. Nor does it block in a write, and that is
+  `SEND_TIMEOUT`'s trap: a socket whose server stopped reading takes every
+  `write()` into its buffer (the K5 review, 2026-11-27, before the fix:
+  50,000 lines, 18 MB, no `queue_limit` drop, all lost on close). So `raw()` notes a `write()`
+  returning false, `pump()` writes nothing more until the socket's `drain`
+  -- the backlog stays in the queue, where `queue_limit` drops with its
+  notice -- and `SEND_TIMEOUT` (10s, `sendTimeout` for tests) without a
+  `drain` is Python's `socket.timeout`: logged as `timed out`, reconnect,
+  queue and pending parts kept. Lost on that reconnect is what the dead
+  socket's kernel buffer had already accepted, in both: Python's
+  `sendall()` blocks only once that buffer is full, so it loses it too
+  (the K5 re-review, 2026-11-27, Python 3.13, `SEND_TIMEOUT` patched to
+  1s, a localhost server that stopped reading after the JOIN, 200 lines
+  of 30 KB: m0 to m61 lost, ~1.9 MB; Bun 1.4.5 measured ~2.6 MB there).
+  The TS client loses on top only Node's own stream buffer: at most its
+  64 KB high-water mark plus the one `write()` that crossed it. A lone UTF-16 surrogate (a JSON `"\ud800"` in a hook payload
+  can carry one) goes out as U+FFFD, counted as its 3 bytes, where Python's
+  `encode()` raises inside `_pump`, loses the line and drops the connection
+  into a 5s backoff; socket errors surface as `ConnectionError`, so one
+  during the post-`QUIT` wait is swallowed as Python swallows its own
+  `ConnectionError` there. The socket is closed with `end()` before
+  `destroy()`: Python's `sendall()` had the bytes in the kernel, a Node
+  write may still be queued in the stream and `destroy()` alone would drop
+  the `QUIT`. That flush shares the stop's 1.5s budget (`STOP_BUDGET`), so
+  `close()` against a server that reads nothing still ends within it.
+  Covered by `tests/irc_connection.test.ts`'s `BackpressureTests`, against
+  the fake's `stallAfterJoin`. The fake ircd is
+  `tests/fakeirc.ts`, `bun tests/run_fakeirc.ts [port] [--tls] [--isupport
+  TOKEN]…` the standalone one.
 - The MCP loop is the only writer to stdout. Everything else logs to stderr.
 - `tools/call` must return immediately. Formatting, transcript reads and IRC
   I/O happen on other threads.
