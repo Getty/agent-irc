@@ -1,0 +1,21 @@
+---
+class: standard
+completed: 2026-11-27T17:31:36Z
+created: 2026-11-27T14:08:43Z
+id: 15
+priority: medium
+started: 2026-11-27T17:31:36Z
+status: done
+tags:
+- bun-port
+title: 'K12: Release notes for the Bun port'
+updated: 2026-11-27T17:31:36Z
+---
+
+Hub card agent-developer k12, part B (brief ~/briefs/2026-11-27-agent-irc-getty-bun-umbau.md; plan: part A report §4). Branch getty-bun. Path A (G1): mcp_tool hooks stay byte-identical, only the MCP server moves to TypeScript under the getty-bun starter. Changes under {{$NEXT}} only: Python gone, first start downloads Bun (first session without Bun does not mirror), Windows/macOS. No version, no tag, no release: the merge waits for macOS in getty-bun (F5) and the MCP entry of agent-bun-runtime 0.2.0. Owner: release-manager. Depends K8-K11.
+
+2026-11-27 17:29 Review (agent-irc-reviewer) of Changes {{$NEXT}} (uncommitted, on 6ec5b3f): CHANGES REQUESTED. Format ok (CPAN, '  - ' entries, 4-space continuation, <=78 cols, only {{$NEXT}}, no version). G3 is stated (entry 2, 'not guaranteed to mirror', 5 s hook / ~30 s start, ensure / MCP_TIMEOUT / startup_timeout_sec) and matches README 'The first start'. Accurate vs README/.mcp.codex.json: Python gone, ~50 MB checksum-verified download into ~/.getty slot, sh -c locator, glibc x64/aarch64, surrogate->U+FFFD (tests/irc_connection.test.ts:261). Missing/inaccurate: (1) TOML now read by Bun.TOML.parse (CLAUDE.md:66-79): an integer beyond +-2^53 makes the whole file be skipped, trust markers included (tomllib read it); TOML 1.1 files tomllib refused are accepted; flood_burst = 4.0 is now taken -- user-visible config behaviour, no entry. (2) macOS: 'not supported yet' hides that it worked on Python until now; say it is a regression for macOS users. (3) New runtime needs: curl or wget, unzip, flock, mktemp, sha256sum/shasum (README:54-56); GETTY_HOME moves the slot. (4) 'Codex 0.148.0 does not run the hooks' is not a change of this release (also true under Python) -- drop or phrase as a note. (5) 'Windows stays off as before' -- under Codex the server now fails to start (README:70-72); say so. Checked against git log/diff origin/main..HEAD, README.md, CLAUDE.md; bun check green (see k11).
+
+2026-11-27 17:30 Re-review (agent-irc-reviewer) of Changes {{$NEXT}} (uncommitted, git diff HEAD -- Changes): READY, text only, no test run (code unchanged since the k11 check). All five requests met, checked against README.md:48-72 and CLAUDE.md:63-79: (1) TOML entry: Bun parser, TOML 1.1 accepted, flood_burst = 4.0 taken, integer beyond +-2^53 skips whole file incl. trust markers -- matches CLAUDE.md:70-76. (2) macOS 'worked under Python ... stops mirroring' -- matches README table. (3) curl/wget, unzip, flock, mktemp, sha256sum/shasum, GETTY_HOME -- matches README:54-58. (4) Codex 0.148.0 entry gone. (5) Windows split per harness, matches README:65-72. Format: CPAN, only {{$NEXT}}, all lines <=78. Nit: Changes:25-26 says Codex on Windows 'fails to start (sh -c)' unconditionally; README:70-71 qualifies 'a Windows machine without a POSIX sh'. Optional. OWNERS: Changes -> release-manager, ok.
+
+2026-11-27 17:31 Committed 8e4279d (pushed)
